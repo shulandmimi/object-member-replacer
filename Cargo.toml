@@ -1,0 +1,13 @@
+[package]
+name = "object-ident-minify"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+swc_ecma_parser = "6.0.1"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3", features = ["default", "env-filter"]}
+anyhow = "1.0.95"
+itertools = "0.13.0"
+swc_ecma_visit = "5.0.0"
+swc_ecma_ast = "5.0.0"
