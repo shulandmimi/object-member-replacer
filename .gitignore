@@ -1,1 +1,5 @@
 /target
+*.node
+dist
+binding
+node_modules

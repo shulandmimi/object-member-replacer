@@ -1,0 +1,67 @@
+name: CI
+env:
+  DEBUG: napi:*
+  APP_NAME: node
+  MACOSX_DEPLOYMENT_TARGET: "10.13"
+permissions:
+  contents: write
+  id-token: write
+  pull-requests: write
+
+on:
+  push:
+    branches:
+      - master
+    tags-ignore:
+      - "**"
+    paths-ignore:
+      - "**/*.md"
+      - LICENSE
+      - "**/*.gitignore"
+      - .editorconfig
+      - docs/**
+
+jobs:
+  call-rust-build:
+    uses: ./.github/workflows/rust-build.yml
+
+  release:
+    name: "release"
+    needs: [call-rust-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Use Node.js 18.x
+        uses: actions/setup-node@v2
+        with:
+          node-version: 18.x
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.1.4
+          run_install: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/artifacts
+      - name: View Artifact
+        run: |
+          mkdir /tmp/artifacts/transformer
+          mv /tmp/artifacts/**/*.node /tmp/artifacts/transformer
+          ls /tmp/artifacts/transformer
+      - name: Install dependencies
+        run: pnpm i
+      - name: Build
+        run: pnpm --filter "@omm/transformer" run build:release
+      - name: Artifact
+        run: |
+          pnpm --filter "@omm/transformer" exec mkdir ./tmp
+          pnpm --filter "@omm/transformer" exec mv /tmp/artifacts/transformer ./tmp
+          pnpm --filter "@omm/transformer" exec ls ./tmp
+          pnpm --filter "@omm/transformer" run artifacts -d ./tmp
+          pnpm --filter "@omm/transformer" exec ls -laR npm dist
+      # - name: Release
+      #   uses: softprops/action-gh-release@v1
+      #   with:
+      #     files: dist/*
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

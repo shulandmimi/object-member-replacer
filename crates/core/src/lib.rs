@@ -3,6 +3,3 @@
 mod core;
 
 pub use core::*;
-
-#[cfg(feature = "transformer")]
-mod transformer;

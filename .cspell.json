@@ -1,0 +1,32 @@
+{
+    "ignoreWords": [
+        "rposition"
+    ],
+    "words": [
+        "addnab",
+        "androideabi",
+        "armv",
+        "cdylib",
+        "clippy",
+        "codegen",
+        "ctxt",
+        "dtolnay",
+        "eabi",
+        "elif",
+        "farmfe",
+        "fooooooooooooooooooooooooooooooooooooooo",
+        "gnueabihf",
+        "Itertools",
+        "libc",
+        "libnghttp",
+        "msvc",
+        "multiarch",
+        "musleabihf",
+        "napi",
+        "npmjs",
+        "rustc",
+        "rustup",
+        "serde",
+        "softprops"
+    ]
+}

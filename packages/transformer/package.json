@@ -1,0 +1,64 @@
+{
+  "name": "@omm/transformer",
+  "version": "0.0.0",
+  "types": "index.d.ts",
+  "type": "module",
+  "private": true,
+  "napi": {
+    "name": "node",
+    "triples": {
+      "additional": [
+        "aarch64-apple-darwin",
+        "aarch64-linux-android",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-unknown-linux-musl",
+        "aarch64-pc-windows-msvc",
+        "armv7-unknown-linux-gnueabihf",
+        "armv7-unknown-linux-musleabihf",
+        "x86_64-unknown-linux-musl",
+        "x86_64-unknown-freebsd",
+        "i686-pc-windows-msvc",
+        "armv7-linux-androideabi",
+        "universal-apple-darwin"
+      ]
+    }
+  },
+  "license": "MIT",
+  "ava": {
+    "timeout": "3m"
+  },
+  "engines": {
+    "node": ">= 10"
+  },
+  "scripts": {
+    "artifacts": "napi artifacts",
+    "build:rs": "npm run build:rs:debug --release",
+    "build:rs:debug": "napi build --platform --cargo-cwd ../../ --cargo-name omm_transformer -p omm_transformer --features node binding",
+    "build:release": "farm build",
+    "prepublishOnly": "napi prepublish -t npm",
+    "test": "ava",
+    "universal": "napi universal",
+    "version": "napi version",
+    "build": "farm build && npm run build:rs"
+  },
+  "exports": {
+    "./webpack": {
+      "import": "./webpack.js",
+      "require": "./webpack.js"
+    }
+  },
+  "devDependencies": {
+    "@farmfe/cli": "^1.0.4",
+    "@farmfe/core": "^1.6.2",
+    "@farmfe/js-plugin-copy": "^0.0.4",
+    "@farmfe/js-plugin-dts": "^0.6.4",
+    "@napi-rs/cli": "^2.18.4",
+    "@types/webpack": "^5.28.5",
+    "ava": "^6.0.1",
+    "is-ci": "^4.1.0",
+    "webpack": "^5.97.1"
+  },
+  "peerDependencies": {
+    "webpack": "^5.97.1"
+  }
+}
