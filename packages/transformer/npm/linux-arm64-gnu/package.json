@@ -1,5 +1,5 @@
 {
-  "name": "node-linux-arm64-gnu",
+  "name": "@omm/transformer-linux-arm64-gnu",
   "version": "0.0.0",
   "os": [
     "linux"
@@ -7,9 +7,9 @@
   "cpu": [
     "arm64"
   ],
-  "main": "node.linux-arm64-gnu.node",
+  "main": "transformer.linux-arm64-gnu.node",
   "files": [
-    "node.linux-arm64-gnu.node"
+    "transformer.linux-arm64-gnu.node"
   ],
   "license": "MIT",
   "engines": {

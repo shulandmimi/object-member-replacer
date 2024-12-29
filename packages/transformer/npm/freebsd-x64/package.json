@@ -1,5 +1,5 @@
 {
-  "name": "node-freebsd-x64",
+  "name": "@omm/transformer-freebsd-x64",
   "version": "0.0.0",
   "os": [
     "freebsd"
@@ -7,9 +7,9 @@
   "cpu": [
     "x64"
   ],
-  "main": "node.freebsd-x64.node",
+  "main": "transformer.freebsd-x64.node",
   "files": [
-    "node.freebsd-x64.node"
+    "transformer.freebsd-x64.node"
   ],
   "license": "MIT",
   "engines": {

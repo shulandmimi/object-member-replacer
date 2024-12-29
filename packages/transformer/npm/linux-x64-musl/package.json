@@ -1,5 +1,5 @@
 {
-  "name": "node-linux-x64-musl",
+  "name": "@omm/transformer-linux-x64-musl",
   "version": "0.0.0",
   "os": [
     "linux"
@@ -7,9 +7,9 @@
   "cpu": [
     "x64"
   ],
-  "main": "node.linux-x64-musl.node",
+  "main": "transformer.linux-x64-musl.node",
   "files": [
-    "node.linux-x64-musl.node"
+    "transformer.linux-x64-musl.node"
   ],
   "license": "MIT",
   "engines": {

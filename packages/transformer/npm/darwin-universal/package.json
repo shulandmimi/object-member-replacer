@@ -1,12 +1,12 @@
 {
-  "name": "node-darwin-universal",
+  "name": "@omm/transformer-darwin-universal",
   "version": "0.0.0",
   "os": [
     "darwin"
   ],
-  "main": "node.darwin-universal.node",
+  "main": "transformer.darwin-universal.node",
   "files": [
-    "node.darwin-universal.node"
+    "transformer.darwin-universal.node"
   ],
   "license": "MIT",
   "engines": {

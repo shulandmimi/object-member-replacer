@@ -1,5 +1,5 @@
 {
-  "name": "node-win32-ia32-msvc",
+  "name": "@omm/transformer-win32-ia32-msvc",
   "version": "0.0.0",
   "os": [
     "win32"
@@ -7,9 +7,9 @@
   "cpu": [
     "ia32"
   ],
-  "main": "node.win32-ia32-msvc.node",
+  "main": "transformer.win32-ia32-msvc.node",
   "files": [
-    "node.win32-ia32-msvc.node"
+    "transformer.win32-ia32-msvc.node"
   ],
   "license": "MIT",
   "engines": {

@@ -1,5 +1,5 @@
 {
-  "name": "node-linux-arm-gnueabihf",
+  "name": "@omm/transformer-linux-arm-gnueabihf",
   "version": "0.0.0",
   "os": [
     "linux"
@@ -7,9 +7,9 @@
   "cpu": [
     "arm"
   ],
-  "main": "node.linux-arm-gnueabihf.node",
+  "main": "transformer.linux-arm-gnueabihf.node",
   "files": [
-    "node.linux-arm-gnueabihf.node"
+    "transformer.linux-arm-gnueabihf.node"
   ],
   "license": "MIT",
   "engines": {

@@ -1,5 +1,5 @@
 {
-  "name": "node-android-arm-eabi",
+  "name": "@omm/transformer-android-arm-eabi",
   "version": "0.0.0",
   "os": [
     "android"
@@ -7,9 +7,9 @@
   "cpu": [
     "arm"
   ],
-  "main": "node.android-arm-eabi.node",
+  "main": "transformer.android-arm-eabi.node",
   "files": [
-    "node.android-arm-eabi.node"
+    "transformer.android-arm-eabi.node"
   ],
   "license": "MIT",
   "engines": {

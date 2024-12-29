@@ -2,10 +2,8 @@
   "name": "@omm/transformer",
   "version": "0.0.0",
   "types": "index.d.ts",
-  "type": "module",
-  "private": true,
   "napi": {
-    "name": "node",
+    "name": "transformer",
     "triples": {
       "additional": [
         "aarch64-apple-darwin",
@@ -41,10 +39,15 @@
     "version": "napi version",
     "build": "farm build && npm run build:rs"
   },
+  "files": [
+    "./dist",
+    "./binding/"
+  ],
   "exports": {
     "./webpack": {
-      "import": "./webpack.js",
-      "require": "./webpack.js"
+      "import": "./dist/webpack.js",
+      "require": "./dist/webpack.js",
+      "types": "./dist/src/webpack.d.ts"
     }
   },
   "devDependencies": {

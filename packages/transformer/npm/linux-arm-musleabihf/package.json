@@ -1,5 +1,5 @@
 {
-  "name": "node-linux-arm-musleabihf",
+  "name": "@omm/transformer-linux-arm-musleabihf",
   "version": "0.0.0",
   "os": [
     "linux"
@@ -7,9 +7,9 @@
   "cpu": [
     "arm"
   ],
-  "main": "node.linux-arm-musleabihf.node",
+  "main": "transformer.linux-arm-musleabihf.node",
   "files": [
-    "node.linux-arm-musleabihf.node"
+    "transformer.linux-arm-musleabihf.node"
   ],
   "license": "MIT",
   "engines": {

@@ -82,12 +82,15 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      - name: Install
-        uses: dtolnay/rust-toolchain@stable
-        if: ${{ !matrix.settings.docker }}
-        with:
-          toolchain: nightly-2024-10-07
-          targets: ${{ matrix.settings.target }}
+      # - name: Install
+      #   uses: dtolnay/rust-toolchain@stable
+      #   if: ${{ !matrix.settings.docker }}
+      #   with:
+      #     toolchain: nightly-2024-10-07
+      #     targets: ${{ matrix.settings.target }}
+      - name: Install rustup
+        run: rustup target add ${{ matrix.settings.target }}
+        if: ${{ matrix.settings.target }}
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -129,6 +132,14 @@ jobs:
       - name: Build
         run: ${{ matrix.settings.build }}
         if: ${{ !matrix.settings.docker }}
+        shell: bash
+      - name: Build times 2
+        run: ${{ matrix.settings.build }}
+        if: ${{ !matrix.settings.docker && failure() }}
+        shell: bash
+      - name: Build times 3
+        run: ${{ matrix.settings.build }}
+        if: ${{ !matrix.settings.docker && failure() }}
         shell: bash
       - name: Upload artifact
         uses: actions/upload-artifact@v4
