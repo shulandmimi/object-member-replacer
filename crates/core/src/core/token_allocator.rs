@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-#[derive(Debug)]
+use super::constant;
+
+#[derive(Debug, Default)]
 pub struct TokenAllocator {
     pos: usize,
     used_allocator: HashSet<String>,
@@ -8,14 +10,11 @@ pub struct TokenAllocator {
 
 impl TokenAllocator {
     pub fn new() -> Self {
-        Self {
-            pos: 0,
-            used_allocator: HashSet::new(),
-        }
+        Default::default()
     }
 
     fn ident(&self) -> String {
-        let mut pos = self.pos / 52;
+        let mut pos = self.pos / constant::COMPRESS_CHARACTER_WIDTH as usize;
         let mut r = String::new();
 
         let mut push_ch = |ch: u8| {
@@ -27,14 +26,14 @@ impl TokenAllocator {
         };
 
         while pos > 0 {
-            let ch = (pos - 1) % 52;
+            let ch = (pos - 1) % constant::COMPRESS_CHARACTER_WIDTH as usize;
 
             push_ch(ch as u8);
 
-            pos /= 52;
+            pos /= constant::COMPRESS_CHARACTER_WIDTH as usize;
         }
 
-        push_ch((self.pos % 52) as u8);
+        push_ch((self.pos % constant::COMPRESS_CHARACTER_WIDTH as usize) as u8);
 
         r
     }

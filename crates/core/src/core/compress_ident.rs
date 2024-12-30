@@ -2,42 +2,58 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 
-pub struct IdentCost {
-    pub first_cost: usize,
-    pub more_cost: isize,
-    pub original_cost: isize,
-    pub compress_cost: isize,
+use super::constant;
+
+#[allow(dead_code)]
+struct ConstantCost {
+    first_cost: usize,
+    more_cost: isize,
 }
 
-impl IdentCost {
-    pub fn new(pos: usize, ch_len: usize, used_counts: usize) -> Self {
+// struct HostingMap;
+struct HostingVariable;
+
+#[allow(dead_code)]
+struct HostingCustom(ConstantCost);
+
+const VAR_HOSTING: HostingVariable = HostingVariable;
+
+#[allow(dead_code)]
+trait CostCalculator: Sized {
+    // fn create(pos: usize, ident_len: usize, used_counts: usize) -> Self;
+    fn first_cost() -> usize;
+    fn more_cost() -> isize;
+    fn should_compress(&self, pos: usize, ident_len: usize, used_counts: usize) -> bool;
+}
+
+impl CostCalculator for HostingVariable {
+    // .foo => var a = "foo"; [a]
+    // 使用一次的最小代价 `="",[]`
+    fn first_cost() -> usize {
+        6
+    }
+
+    fn more_cost() -> isize {
+        2 - 1
+    }
+
+    fn should_compress(&self, pos: usize, ident_len: usize, used_counts: usize) -> bool {
         let pos = pos as isize;
-        let ch_len = ch_len as isize;
+        let ch_len = ident_len as isize;
         let used_counts = used_counts as isize;
 
         // 预测该 ch 压缩后的长度
-        let cost = (pos / 52).max(1);
+        let cost = (pos / constant::COMPRESS_CHARACTER_WIDTH as isize).max(1);
 
         // 固定代价
         // var , var 的的代价不进行计算
 
-        // .foo => var a = "foo"; [a]
-        // 使用一次的最小代价 `="",[]`
-        let v1 = 1 + 2 + 1 + 2 + (cost * 2) - 1;
-        // 后续使用的代价
-        let v2 = (cost + 2 - 1) - ch_len;
+        let v1 = (Self::first_cost() as isize) + (cost * 2) - 1;
+        // 后续使用的代价 .a => [a]
+        let v2 = (cost + Self::more_cost()) - ch_len;
         let v3 = v2 * (used_counts - 1);
 
-        Self {
-            first_cost: v1 as usize,
-            more_cost: v2,
-            original_cost: (ch_len * used_counts),
-            compress_cost: v1 + v3,
-        }
-    }
-
-    pub fn should_compress(&self) -> bool {
-        self.compress_cost < 0
+        v1 + v3 < 0
     }
 }
 
@@ -62,9 +78,7 @@ pub fn filter_cannot_compress_ident(map: HashMap<String, usize>) -> HashMap<Stri
                 return false;
             }
 
-            let cost = IdentCost::new(index, ident.len(), *count);
-
-            if !cost.should_compress() {
+            if !VAR_HOSTING.should_compress(index, ident.len(), *count) {
                 return false;
             }
 
@@ -86,39 +100,23 @@ pub fn filter_cannot_compress_ident(map: HashMap<String, usize>) -> HashMap<Stri
 mod tests {
     use super::*;
     mod cost {
-        use super::IdentCost;
+        use crate::core::compress_ident::{CostCalculator, VAR_HOSTING};
 
         #[test]
         fn f1() {
-            let v = IdentCost::new(0, 3, 1);
+            let v = VAR_HOSTING.should_compress(0, 3, 1);
 
-            assert_eq!(v.first_cost, 7);
-            assert_eq!(v.more_cost, -1);
-            assert_eq!(v.original_cost, 3);
-            assert_eq!(v.compress_cost, 7);
-            assert!(!v.should_compress());
+            assert!(!v);
 
-            let v = IdentCost::new(0, 3, 8);
+            let v = VAR_HOSTING.should_compress(0, 3, 8);
 
-            assert_eq!(v.first_cost, 7);
-            assert_eq!(v.more_cost, -1);
-            assert_eq!(v.original_cost, 24);
-            assert_eq!(v.compress_cost, 0);
-            assert!(!v.should_compress());
+            assert!(!v);
 
-            let v = IdentCost::new(0, 3, 20);
-            assert_eq!(v.first_cost, 7);
-            assert_eq!(v.more_cost, -1);
-            assert_eq!(v.original_cost, 60);
-            assert_eq!(v.compress_cost, -12);
-            assert!(v.should_compress());
+            let v = VAR_HOSTING.should_compress(0, 3, 20);
+            assert!(v);
 
-            let v = IdentCost::new(0, 3, 100);
-            assert_eq!(v.first_cost, 7);
-            assert_eq!(v.more_cost, -1);
-            assert_eq!(v.original_cost, 300);
-            assert_eq!(v.compress_cost, -92);
-            assert!(v.should_compress());
+            let v = VAR_HOSTING.should_compress(0, 3, 100);
+            assert!(v);
         }
     }
 
