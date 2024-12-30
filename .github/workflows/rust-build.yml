@@ -130,17 +130,13 @@ jobs:
           options: "--user 0:0 -v ${{ github.workspace }}/.cargo-cache/git/db:/usr/local/cargo/git/db -v ${{ github.workspace }}/.cargo/registry/cache:/usr/local/cargo/registry/cache -v ${{ github.workspace }}/.cargo/registry/index:/usr/local/cargo/registry/index -v ${{ github.workspace }}:/build -w /build"
           run: ${{ matrix.settings.build }}
       - name: Build
-        run: ${{ matrix.settings.build }}
+        uses: nick-fields/retry@v3
         if: ${{ !matrix.settings.docker }}
-        shell: bash
-      - name: Build times 2
-        run: ${{ matrix.settings.build }}
-        if: ${{ !matrix.settings.docker && failure() }}
-        shell: bash
-      - name: Build times 3
-        run: ${{ matrix.settings.build }}
-        if: ${{ !matrix.settings.docker && failure() }}
-        shell: bash
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          command: ${{ matrix.settings.build }}
+          shell: bash
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
