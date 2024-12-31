@@ -1,5 +1,11 @@
 # @oomm/transformer
 
+## 0.0.7
+
+### Patch Changes
+
+- f3f81f3: fix release script
+
 ## 0.0.6
 
 ### Patch Changes
