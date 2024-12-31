@@ -1,5 +1,5 @@
 {
-  "name": "@omm/transformer-darwin-universal",
+  "name": "@oomm/transformer-darwin-universal",
   "version": "0.0.0",
   "os": [
     "darwin"

@@ -51,19 +51,19 @@ jobs:
       - name: Install dependencies
         run: pnpm i
       - name: Build
-        run: pnpm --filter "@omm/transformer" run build:release
+        run: pnpm --filter "@oomm/transformer" run build:release
       - name: Artifact
         run: |
-          pnpm --filter "@omm/transformer" exec mkdir ./tmp
-          pnpm --filter "@omm/transformer" exec mv /tmp/artifacts/transformer ./tmp
-          pnpm --filter "@omm/transformer" exec ls ./tmp
-          pnpm --filter "@omm/transformer" run artifacts -d ./tmp
-          pnpm --filter "@omm/transformer" exec ls -laR npm dist
+          pnpm --filter "@oomm/transformer" exec mkdir ./tmp
+          pnpm --filter "@oomm/transformer" exec mv /tmp/artifacts/transformer ./tmp
+          pnpm --filter "@oomm/transformer" exec ls ./tmp
+          pnpm --filter "@oomm/transformer" run artifacts -d ./tmp
+          pnpm --filter "@oomm/transformer" exec ls -laR npm dist
       - name: Create Release Pull Request or Publish to npm
         id: changesets
         uses: changesets/action@v1
         with:
-          publish: pnpm publish --filter "@omm/transformer" --access public
+          publish: pnpm publish --filter "@oomm/transformer" --access public
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

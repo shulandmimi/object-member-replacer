@@ -1,5 +1,5 @@
 {
-  "name": "@omm/transformer-darwin-arm64",
+  "name": "@oomm/transformer-darwin-arm64",
   "version": "0.0.0",
   "os": [
     "darwin"

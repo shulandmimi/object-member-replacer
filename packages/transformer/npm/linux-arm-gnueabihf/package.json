@@ -1,5 +1,5 @@
 {
-  "name": "@omm/transformer-linux-arm-gnueabihf",
+  "name": "@oomm/transformer-linux-arm-gnueabihf",
   "version": "0.0.0",
   "os": [
     "linux"

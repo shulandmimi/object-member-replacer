@@ -1,5 +1,5 @@
 {
-  "name": "@omm/transformer-android-arm-eabi",
+  "name": "@oomm/transformer-android-arm-eabi",
   "version": "0.0.0",
   "os": [
     "android"

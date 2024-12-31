@@ -24,6 +24,7 @@
         "musleabihf",
         "napi",
         "npmjs",
+        "oomm",
         "rustc",
         "rustup",
         "serde",

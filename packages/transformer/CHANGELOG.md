@@ -1,4 +1,4 @@
-# @omm/transformer
+# @oomm/transformer
 
 ## 0.0.2
 

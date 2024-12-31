@@ -1,5 +1,5 @@
 {
-  "name": "@omm/transformer-linux-arm-musleabihf",
+  "name": "@oomm/transformer-linux-arm-musleabihf",
   "version": "0.0.0",
   "os": [
     "linux"

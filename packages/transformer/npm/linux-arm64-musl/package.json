@@ -1,5 +1,5 @@
 {
-  "name": "@omm/transformer-linux-arm64-musl",
+  "name": "@oomm/transformer-linux-arm64-musl",
   "version": "0.0.0",
   "os": [
     "linux"
