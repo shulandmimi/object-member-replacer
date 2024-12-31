@@ -1,5 +1,11 @@
 # @oomm/transformer
 
+## 0.0.5
+
+### Patch Changes
+
+- c629f01: fix release error
+
 ## 0.0.4
 
 ### Patch Changes
