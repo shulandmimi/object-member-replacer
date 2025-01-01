@@ -21,6 +21,9 @@
       ]
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "MIT",
   "ava": {
     "timeout": "3m"
