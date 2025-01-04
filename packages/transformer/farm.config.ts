@@ -9,7 +9,7 @@ export default defineConfig({
             webpack: "./src/core/webpack.ts",
         },
         output: {
-            entryFilename: '[entryName]Entry.js',
+            entryFilename: "[entryName]Entry.js",
             format: "cjs",
             targetEnv: "library-node",
         },
@@ -43,6 +43,8 @@ export default defineConfig({
                 ],
             }),
 
-        dts(),
+        dts({
+            include: ["./src/**/*.ts"],
+        }),
     ],
 });

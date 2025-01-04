@@ -1,0 +1,19 @@
+{
+  "name": "@oomm/webpack-plugin",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "npx webpack"
+  },
+  "private": true,
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@oomm/transformer": "workspace:^"
+  },
+  "dependencies": {
+    "terser-webpack-plugin": "^5.3.11"
+  }
+}

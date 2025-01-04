@@ -33,14 +33,15 @@
   },
   "scripts": {
     "artifacts": "napi artifacts",
-    "build:rs": "npm run build:rs:debug --release",
+    "build:rs": "npm run build:rs:debug -- --release",
     "build:rs:debug": "napi build --platform --cargo-cwd ../../ --cargo-name omm_transformer -p omm_transformer --features node binding",
     "build:release": "farm build",
     "prepublishOnly": "napi prepublish -t npm",
     "test": "ava",
     "universal": "napi universal",
     "version": "napi version",
-    "build": "farm build && npm run build:rs"
+    "build": "npm run build:release && npm run build:rs",
+    "start": "npm run build:rs && farm watch"
   },
   "files": [
     "./dist",
@@ -50,7 +51,7 @@
     "./webpack": {
       "import": "./dist/webpack.js",
       "require": "./dist/webpack.js",
-      "types": "./dist/src/webpack.d.ts"
+      "types": "./dist/core/webpack.d.ts"
     }
   },
   "devDependencies": {
@@ -59,6 +60,7 @@
     "@farmfe/js-plugin-copy": "^0.0.4",
     "@farmfe/js-plugin-dts": "^0.6.4",
     "@napi-rs/cli": "^2.18.4",
+    "@types/node": "^22.10.5",
     "@types/webpack": "^5.28.5",
     "ava": "^6.0.1",
     "is-ci": "^4.1.0",

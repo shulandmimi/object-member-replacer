@@ -7,4 +7,5 @@ edition = "2021"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3", features = ["default", "env-filter"] }
 anyhow = "1.0.95"
-itertools = "0.13.0"
+itertools = "0.14.0"
+rustc-hash = "2.1.0"

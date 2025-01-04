@@ -1,4 +1,10 @@
 {
+    "globRoot": "./",
+    "cache": {
+      "cacheLocation": "./node_modules/.cspell",
+      "cacheStrategy": "content",
+      "useCache": true
+    },
     "ignoreWords": [
         "rposition"
     ],
@@ -29,5 +35,6 @@
         "rustup",
         "serde",
         "softprops"
-    ]
+    ],
+    "useGitignore": true
 }

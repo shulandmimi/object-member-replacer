@@ -10,15 +10,21 @@ swc_ecma_ast = "5.0.0"
 swc_ecma_codegen = "5.0.1"
 omm_core = { path = "../core" }
 anyhow = "1.0.95"
-swc_common = "5.0.0"
-itertools = "0.13.0"
+swc_common = { version = "5.0.0", features = ["sourcemap"] }
+itertools = "0.14.0"
 serde = "1.0.217"
 serde_json = "1.0.134"
+rustc-hash = "2.1.0"
+swc_error_reporters = "6.0.0"
+swc_ecma_transforms = "8.0.0"
+swc_ecma_utils = "6.0.0"
+sourcemap = "9.1.2"
+enhanced-magic-string = "0.1.0"
 
 napi = { version = "2.12.2", default-features = false, features = [
     "napi4",
     "serde-json",
-    "anyhow"
+    "anyhow",
 ], optional = true }
 napi-derive = { version = "2.12.2", optional = true }
 

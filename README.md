@@ -5,9 +5,10 @@ Try compressing object fields or string literals, which is suitable for some sce
 ## roadmap
 
 - [ ] support other bundler
+  - [x] webpack minify plugin
 - compression at different stages
   - [ ] transform -> for module
   - [ ] before minify -> for chunk
 - [ ] when mapping exceeds size, split into separate files
-- [ ] sourcemap
+- [x] sourcemap
 - [ ] better compression

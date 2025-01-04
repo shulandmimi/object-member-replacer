@@ -1,27 +1,30 @@
+use rustc_hash::{FxHashMap, FxHashSet};
 use swc_ecma_ast::{
     ComputedPropName, Expr, Ident, KeyValueProp, Lit, MemberExpr, MemberProp, Prop, PropName,
     PropOrSpread,
 };
 use swc_ecma_visit::VisitMut;
 
-use std::collections::{HashMap, HashSet};
-
 use omm_core::TokenAllocator;
 
 #[derive(Debug)]
 pub struct IdentReplacer {
-    pub should_replace_ident_list: HashSet<String>,
-    pub ident_map: HashMap<String, String>,
+    pub should_replace_ident_list: FxHashSet<String>,
+    pub ident_map: FxHashMap<String, String>,
     pub allocator: TokenAllocator,
 }
 
 impl IdentReplacer {
-    pub fn new(set: HashSet<String>) -> Self {
+    pub fn new(set: FxHashSet<String>) -> Self {
         Self {
             should_replace_ident_list: set,
             allocator: TokenAllocator::new(),
-            ident_map: HashMap::new(),
+            ident_map: FxHashMap::default(),
         }
+    }
+
+    pub fn extend_used_ident(&mut self, set: FxHashSet<String>) {
+        self.allocator.extends(set);
     }
 
     pub fn contain(&self, ident: &str) -> bool {
@@ -41,8 +44,8 @@ impl IdentReplacer {
     }
 }
 
-impl From<HashMap<String, usize>> for IdentReplacer {
-    fn from(value: HashMap<String, usize>) -> Self {
+impl From<FxHashMap<String, usize>> for IdentReplacer {
+    fn from(value: FxHashMap<String, usize>) -> Self {
         Self::new(value.into_keys().collect())
     }
 }

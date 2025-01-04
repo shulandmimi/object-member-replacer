@@ -1,16 +1,20 @@
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use super::constant;
 
 #[derive(Debug, Default)]
 pub struct TokenAllocator {
     pos: usize,
-    used_allocator: HashSet<String>,
+    used_allocator: FxHashSet<String>,
 }
 
 impl TokenAllocator {
     pub fn new() -> Self {
         Default::default()
+    }
+
+    pub fn extends(&mut self, set: FxHashSet<String>) {
+        self.used_allocator.extend(set);
     }
 
     fn ident(&self) -> String {

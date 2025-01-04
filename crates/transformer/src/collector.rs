@@ -1,17 +1,29 @@
-use std::collections::HashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
+use swc_common::Mark;
 use swc_ecma_ast::{Expr, IdentName, Lit, MemberExpr, MemberProp};
-use swc_ecma_visit::Visit;
+use swc_ecma_visit::{Visit, VisitWith};
 
-
-#[derive(Debug, Default)]
+#[allow(dead_code)]
+#[derive(Debug)]
 pub struct IdentCollector {
-    pub field: HashMap<String, usize>,
+    pub field: FxHashMap<String, usize>,
+    // TODO: collect more detailed data, such as variable declarations, parameters, functions, etc.
+    pub unresolved_ident: FxHashSet<String>,
+    pub top_level_ident: FxHashSet<String>,
+    pub top_level_mark: Mark,
+    pub unresolved_mark: Mark,
 }
 
 impl IdentCollector {
-    pub fn new() -> Self {
-        Default::default()
+    pub fn new(top_level_mark: Mark, unresolved_mark: Mark) -> Self {
+        Self {
+            field: Default::default(),
+            unresolved_ident: Default::default(),
+            top_level_ident: Default::default(),
+            top_level_mark,
+            unresolved_mark,
+        }
     }
 
     fn count_str(&mut self, ident: &str) {
@@ -31,12 +43,28 @@ impl Visit for IdentCollector {
             MemberProp::Ident(ident_name) => {
                 self.count(ident_name);
             }
-            MemberProp::PrivateName(_) => {}
+            MemberProp::PrivateName(name) => {
+                name.visit_with(self);
+            }
             MemberProp::Computed(computed_prop_name) => {
                 if let Expr::Lit(Lit::Str(lit)) = &*computed_prop_name.expr {
                     self.count_str(lit.value.as_str());
+                    return;
                 }
+                computed_prop_name.visit_with(self);
             }
+        }
+    }
+
+    fn visit_ident(&mut self, ident: &swc_ecma_ast::Ident) {
+        self.unresolved_ident.insert(ident.sym.to_string());
+    }
+
+    fn visit_lit(&mut self, lit: &Lit) {
+        if let Lit::Str(lit) = lit {
+            self.count_str(lit.value.as_str());
+        } else {
+            lit.visit_children_with(self);
         }
     }
 }

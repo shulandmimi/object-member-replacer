@@ -1,1 +1,1 @@
-export { transform } from '../binding/index.js';
+export { transform } from "../binding/index.js";

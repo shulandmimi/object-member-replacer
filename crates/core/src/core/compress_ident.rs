@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
 use itertools::Itertools;
+use rustc_hash::FxHashMap;
 
 use super::constant;
 
@@ -10,7 +9,6 @@ struct ConstantCost {
     more_cost: isize,
 }
 
-// struct HostingMap;
 struct HostingVariable;
 
 #[allow(dead_code)]
@@ -28,7 +26,7 @@ trait CostCalculator: Sized {
 
 impl CostCalculator for HostingVariable {
     // .foo => var a = "foo"; [a]
-    // 使用一次的最小代价 `="",[]`
+    // first usage cost `="",[]`
     fn first_cost() -> usize {
         6
     }
@@ -42,14 +40,14 @@ impl CostCalculator for HostingVariable {
         let ch_len = ident_len as isize;
         let used_counts = used_counts as isize;
 
-        // 预测该 ch 压缩后的长度
+        // predict the length after compressing ch.
         let cost = (pos / constant::COMPRESS_CHARACTER_WIDTH as isize).max(1);
 
-        // 固定代价
-        // var , var 的的代价不进行计算
+        // Fixed cost
+        // The cost of var, now var is not calculated
 
         let v1 = (Self::first_cost() as isize) + (cost * 2) - 1;
-        // 后续使用的代价 .a => [a]
+        // cost of subsequent use .a => [a]
         let v2 = (cost + Self::more_cost()) - ch_len;
         let v3 = v2 * (used_counts - 1);
 
@@ -57,7 +55,7 @@ impl CostCalculator for HostingVariable {
     }
 }
 
-pub fn filter_cannot_compress_ident(map: HashMap<String, usize>) -> HashMap<String, usize> {
+pub fn filter_cannot_compress_ident(map: FxHashMap<String, usize>) -> FxHashMap<String, usize> {
     let mut v = map
         .into_iter()
         .filter(|(_, c)| *c > 1)
@@ -86,7 +84,7 @@ pub fn filter_cannot_compress_ident(map: HashMap<String, usize>) -> HashMap<Stri
         });
 
     if iter_once && position.is_none() {
-        return HashMap::new();
+        return FxHashMap::default();
     }
 
     if let Some(position) = position {
@@ -125,7 +123,7 @@ mod tests {
 
         #[test]
         fn cannot_compress() {
-            let map = HashMap::from_iter([
+            let map = FxHashMap::from_iter([
                 ("aaa".to_string(), 1),
                 ("bbb".to_string(), 1),
                 ("ccc".to_string(), 1),
@@ -135,26 +133,26 @@ mod tests {
 
             let v = filter_cannot_compress_ident(map);
 
-            assert_eq!(v, HashMap::new());
+            assert_eq!(v, FxHashMap::default());
         }
 
         #[test]
         fn cannot_compress_long_but_used_once() {
-            let map = HashMap::from_iter([("a".repeat(20), 1)]);
+            let map = FxHashMap::from_iter([("a".repeat(20), 1)]);
 
             let v = filter_cannot_compress_ident(map);
 
-            assert_eq!(v, HashMap::new());
+            assert_eq!(v, FxHashMap::default());
         }
 
         #[test]
         fn compress_long_ident_but_low_used() {
             let s = "a".repeat(40);
-            let map = HashMap::from_iter([(s.clone(), 2)]);
+            let map = FxHashMap::from_iter([(s.clone(), 2)]);
 
             let v = filter_cannot_compress_ident(map);
 
-            assert_eq!(v, HashMap::from_iter([(s, 2)]));
+            assert_eq!(v, FxHashMap::from_iter([(s, 2)]));
         }
     }
 }
