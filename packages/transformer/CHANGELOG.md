@@ -1,5 +1,11 @@
 # @oomm/transformer
 
+## 0.0.9
+
+### Patch Changes
+
+- 4e45aa4: support webpack plugin & sourcemap
+
 ## 0.0.8
 
 ### Patch Changes
