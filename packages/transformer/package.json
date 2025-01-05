@@ -40,8 +40,8 @@
     "test": "ava",
     "universal": "napi universal",
     "version": "napi version",
-    "build": "npm run build:release && npm run build:rs",
-    "start": "npm run build:rs && farm watch"
+    "start": "npm run build:rs && farm watch",
+    "clean": "rm -rf ./binding/*.node"
   },
   "files": [
     "./dist",

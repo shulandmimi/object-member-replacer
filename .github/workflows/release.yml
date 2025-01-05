@@ -49,16 +49,20 @@ jobs:
           mv /tmp/artifacts/**/*.node /tmp/artifacts/transformer
           ls /tmp/artifacts/transformer
       - name: Install dependencies
-        run: pnpm i --no-frozen-lockfile
+        run: pnpm i
       - name: Build
-        run: pnpm --filter "@oomm/transformer" run build
+        run: |
+          pnpm --filter "@oomm/transformer" run build:rs
+          pnpm --filter "@oomm/transformer" run clean
+          pnpm --filter "@oomm/transformer" run build:release
       - name: Artifact
         run: |
           pnpm --filter "@oomm/transformer" exec mkdir ./tmp
           pnpm --filter "@oomm/transformer" exec mv /tmp/artifacts/transformer ./tmp
           pnpm --filter "@oomm/transformer" exec ls ./tmp
           pnpm --filter "@oomm/transformer" run artifacts -d ./tmp
-          pnpm --filter "@oomm/transformer" exec ls -laR npm dist
+          pnpm --filter "@oomm/transformer" exec ls -laR ./binding ./npm ./dist
+          ls
       - name: Create Release Pull Request or Publish to npm
         id: changesets
         uses: changesets/action@v1
