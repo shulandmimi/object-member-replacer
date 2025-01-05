@@ -1,5 +1,11 @@
 # @oomm/transformer
 
+## 0.0.12
+
+### Patch Changes
+
+- 3166696: move entry to dist
+
 ## 0.0.11
 
 ### Patch Changes
