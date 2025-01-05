@@ -1,5 +1,11 @@
 # @oomm/transformer
 
+## 0.0.11
+
+### Patch Changes
+
+- e0c5b68: asset build
+
 ## 0.0.10
 
 ### Patch Changes
