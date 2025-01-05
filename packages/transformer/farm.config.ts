@@ -25,8 +25,6 @@ export default defineConfig({
                 },
             ],
         },
-        mode: "development",
-        minify: false,
     },
     plugins: [
         !isCI &&
@@ -36,13 +34,16 @@ export default defineConfig({
                         src: "./binding/*.node",
                         dest: "./dist/",
                     },
-                    {
-                        src: "./src/*.js",
-                        dest: "./dist/",
-                    },
                 ],
             }),
-
+        copy({
+            targets: [
+                {
+                    src: "./src/*.js",
+                    dest: "./dist/",
+                },
+            ],
+        }),
         dts({
             include: ["./src/**/*.ts"],
         }),
