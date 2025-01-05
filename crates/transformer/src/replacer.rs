@@ -3,7 +3,7 @@ use swc_ecma_ast::{
     ComputedPropName, Expr, Ident, KeyValueProp, Lit, MemberExpr, MemberProp, Prop, PropName,
     PropOrSpread,
 };
-use swc_ecma_visit::VisitMut;
+use swc_ecma_visit::{VisitMut, VisitMutWith, VisitWith};
 
 use omm_core::TokenAllocator;
 
@@ -69,29 +69,40 @@ impl IdentReplacer {
         }
     }
 
-    fn replace_computed(&mut self, computed_props_name: &mut ComputedPropName) {
+    fn replace_computed(&mut self, computed_props_name: &mut ComputedPropName) -> bool {
         if let Expr::Lit(Lit::Str(lit)) = &*computed_props_name.expr {
             let v = lit.value.as_str();
             if self.contain(v) {
                 *computed_props_name = self.create_computed_prop_name(v);
+                return true;
             }
         }
+
+        false
     }
 }
 
 impl VisitMut for IdentReplacer {
     fn visit_mut_member_expr(&mut self, node: &mut MemberExpr) {
+        let mut is_replaced = false;
         match &mut node.prop {
             MemberProp::Ident(ident) => {
                 let v = ident.sym.as_str();
                 if self.contain(v) {
                     node.prop = MemberProp::Computed(self.create_computed_prop_name(v));
+                    is_replaced = true;
                 }
             }
+
             MemberProp::PrivateName(_) => {}
+
             MemberProp::Computed(computed_prop_name) => {
-                self.replace_computed(computed_prop_name);
+                is_replaced = self.replace_computed(computed_prop_name);
             }
+        }
+
+        if !is_replaced {
+            node.visit_mut_children_with(self);
         }
     }
 
@@ -128,5 +139,18 @@ impl VisitMut for IdentReplacer {
             },
             PropOrSpread::Spread(_) => {}
         }
+
+        node.visit_mut_children_with(self);
+    }
+
+    fn visit_mut_expr(&mut self, node: &mut Expr) {
+        if let Expr::Lit(Lit::Str(lit)) = node {
+            let v = lit.value.as_str();
+            if self.contain(v) {
+                *node = Expr::Ident(self.create_ident(v));
+            }
+        }
+
+        node.visit_mut_children_with(self);
     }
 }

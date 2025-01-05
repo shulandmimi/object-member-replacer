@@ -121,8 +121,10 @@ export class OOMPlugin {
                             });
                         }
 
-                        let { source } = output!;
-                        compilation.updateAsset(name, source, info);
+                        if (output) {
+                            let { source } = output;
+                            compilation.updateAsset(name, source, info);
+                        }
                     }
 
                     return Promise.resolve();

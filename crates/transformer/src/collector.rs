@@ -57,7 +57,9 @@ impl Visit for IdentCollector {
     }
 
     fn visit_ident(&mut self, ident: &swc_ecma_ast::Ident) {
-        self.unresolved_ident.insert(ident.sym.to_string());
+        if ident.ctxt.outer() == self.unresolved_mark {
+            self.unresolved_ident.insert(ident.sym.to_string());
+        }
     }
 
     fn visit_lit(&mut self, lit: &Lit) {
