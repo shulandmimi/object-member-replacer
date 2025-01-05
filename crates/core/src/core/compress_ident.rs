@@ -1,3 +1,5 @@
+use std::cmp::Reverse;
+
 use itertools::Itertools;
 use rustc_hash::FxHashMap;
 
@@ -31,6 +33,8 @@ impl CostCalculator for HostingVariable {
         6
     }
 
+    // static cost
+    // ._ => [_]
     fn more_cost() -> isize {
         2 - 1
     }
@@ -45,10 +49,11 @@ impl CostCalculator for HostingVariable {
 
         // Fixed cost
         // The cost of var, now var is not calculated
-
         let v1 = (Self::first_cost() as isize) + (cost * 2) - 1;
-        // cost of subsequent use .a => [a]
+
+        // cost of subsequent use .a => [a], cost: 1, more_cost: -1 ch_len: xxx.len
         let v2 = (cost + Self::more_cost()) - ch_len;
+        // all cost
         let v3 = v2 * (used_counts - 1);
 
         v1 + v3 < 0
@@ -59,37 +64,30 @@ pub fn filter_cannot_compress_ident(map: FxHashMap<String, usize>) -> FxHashMap<
     let mut v = map
         .into_iter()
         .filter(|(_, c)| *c > 1)
-        .sorted_by_key(|(v, _)| v.len())
+        .sorted_by_key(|(_, c)| Reverse(*c))
+        .sorted_by_key(|(v, _)| Reverse(v.len()))
         .collect::<Vec<_>>();
 
-    let len = v.len();
+    let mut end = v.len();
 
-    let mut iter_once = false;
-    let position = v
-        .iter()
-        .rev()
-        .enumerate()
-        .rposition(|(index, (ident, count))| {
-            iter_once = true;
+    // TODO: binary search
+    for i in (0..end).rev() {
+        let (ident, count) = &v[i];
 
-            if ident.len() <= 2 {
-                return false;
-            }
+        if VAR_HOSTING.should_compress(i, ident.len(), *count) {
+            break;
+        }
 
-            if !VAR_HOSTING.should_compress(index, ident.len(), *count) {
-                return false;
-            }
+        end = i;
 
-            true
-        });
-
-    if iter_once && position.is_none() {
-        return FxHashMap::default();
+        if ident.len() <= 2 {
+            continue;
+        }
     }
 
-    if let Some(position) = position {
-        v.truncate(len - position + 1);
-    }
+    if end != v.len() {
+        v.truncate(end);
+    };
 
     v.into_iter().collect()
 }
@@ -153,6 +151,53 @@ mod tests {
             let v = filter_cannot_compress_ident(map);
 
             assert_eq!(v, FxHashMap::from_iter([(s, 2)]));
+        }
+
+        #[test]
+        fn t1() {
+            let map = FxHashMap::from_iter([("a".to_string(), 10)]);
+
+            let v = filter_cannot_compress_ident(map);
+
+            assert_eq!(v, FxHashMap::default());
+
+            let map = FxHashMap::from_iter([("aa".to_string(), 1000)]);
+
+            let v = filter_cannot_compress_ident(map);
+
+            assert_eq!(v, FxHashMap::default());
+        }
+
+        #[test]
+        fn t2() {
+            let map = FxHashMap::from_iter([
+                ("aa1".to_string(), 1),
+                ("aa2".to_string(), 2),
+                ("aa3".to_string(), 3),
+                ("aa4".to_string(), 4),
+                ("aa5".to_string(), 5),
+                ("aa6".to_string(), 6),
+                ("aa7".to_string(), 7),
+                ("aa8".to_string(), 8),
+                ("aa9".to_string(), 9),
+                ("aaa".to_string(), 10),
+            ]);
+
+            let v = filter_cannot_compress_ident(map);
+
+            assert_eq!(
+                v,
+                FxHashMap::from_iter([("aaa".to_string(), 10), ("aa9".to_string(), 9)])
+            );
+        }
+
+        #[test]
+        fn t3() {
+            let map = FxHashMap::from_iter([("localStorage".to_string(), 2)]);
+
+            let v = filter_cannot_compress_ident(map.clone());
+
+            assert_eq!(v, map);
         }
     }
 }

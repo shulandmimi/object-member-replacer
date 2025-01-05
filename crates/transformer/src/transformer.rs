@@ -79,6 +79,10 @@ pub fn hosting_variable(module: &mut Module, replacer: IdentReplacer) {
         });
     }
 
+    if decls.is_empty() {
+        return;
+    }
+
     module.body.insert(
         0,
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
@@ -111,6 +115,11 @@ pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
 
     // filter does not have to be replaced
     let map = filter_cannot_compress_ident(field);
+
+    if map.is_empty() {
+        return;
+    }
+
     // replace ident
     let mut replacer = IdentReplacer::new(map.into_keys().collect());
 
