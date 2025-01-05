@@ -1,5 +1,11 @@
 # @oomm/transformer
 
+## 0.0.10
+
+### Patch Changes
+
+- fa75b85: fix release files not contain binding
+
 ## 0.0.9
 
 ### Patch Changes
