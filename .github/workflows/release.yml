@@ -51,7 +51,7 @@ jobs:
       - name: Install dependencies
         run: pnpm i --no-frozen-lockfile
       - name: Build
-        run: pnpm --filter "@oomm/transformer" run build:release
+        run: pnpm --filter "@oomm/transformer" run build
       - name: Artifact
         run: |
           pnpm --filter "@oomm/transformer" exec mkdir ./tmp
