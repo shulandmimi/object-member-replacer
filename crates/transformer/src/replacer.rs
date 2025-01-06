@@ -3,7 +3,7 @@ use swc_ecma_ast::{
     ComputedPropName, Expr, Ident, KeyValueProp, Lit, MemberExpr, MemberProp, Prop, PropName,
     PropOrSpread,
 };
-use swc_ecma_visit::{VisitMut, VisitMutWith, VisitWith};
+use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use omm_core::TokenAllocator;
 

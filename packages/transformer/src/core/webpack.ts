@@ -1,6 +1,7 @@
 import type { Compiler, LoaderDefinitionFunction } from "webpack";
 import { transform, type TransformOption } from "./bridge";
 import { moduleTypeFromName } from "../util/module";
+import { OOMPluginOptions } from "../type";
 
 export const loader: LoaderDefinitionFunction = function (content) {
     const callback = this.async();
@@ -9,8 +10,6 @@ export const loader: LoaderDefinitionFunction = function (content) {
         callback(null, result.code);
     });
 };
-
-export interface OOMPluginOptions {}
 
 interface Output {
     name: string;
@@ -22,7 +21,7 @@ interface Output {
 const PLUGIN_NAME = "OOMPlugin";
 
 export class OOMPlugin {
-    constructor(options: OOMPluginOptions = {}) {}
+    constructor(private options: OOMPluginOptions = {}) {}
 
     apply(compiler: Compiler) {
         compiler.hooks.compilation.tap(PLUGIN_NAME, (compilation) => {
@@ -91,6 +90,7 @@ export class OOMPlugin {
                                 moduleType,
                                 filename: name,
                                 sourceMap: inputMap,
+                                ...this.options,
                             };
 
                             const result = await transform(inputCode, options);

@@ -9,3 +9,4 @@ tracing-subscriber = { version = "0.3", features = ["default", "env-filter"] }
 anyhow = "1.0.95"
 itertools = "0.14.0"
 rustc-hash = "2.1.0"
+lazy_static = "1.5.0"

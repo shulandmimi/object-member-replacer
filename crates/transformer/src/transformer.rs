@@ -103,7 +103,8 @@ pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
     );
 
     // collection
-    let mut collector = IdentCollector::new(unresolved_mark, top_level_mark);
+    let mut collector = IdentCollector::new(unresolved_mark, top_level_mark)
+        .with_ignore_words(context.options.ignore_words.iter().cloned().collect());
 
     module.visit_with(&mut collector);
 
@@ -124,6 +125,7 @@ pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
     let mut replacer = IdentReplacer::new(map.into_keys().collect());
 
     replacer.extend_used_ident(unresolved_ident);
+    replacer.extend_used_ident(context.options.preserve_keywords.iter().cloned().collect());
     module.visit_mut_with(&mut replacer);
 
     // insert replaced ident
@@ -173,11 +175,15 @@ pub struct TransformOption {
     #[serde(default)]
     enable_source_map: bool,
     module_type: Option<ModuleType>,
+    #[serde(default)]
+    preserve_keywords: Vec<String>,
+    #[serde(default)]
+    ignore_words: Vec<String>,
 }
 
 impl TransformOption {
     fn filename(&self) -> String {
-        self.filename.clone().unwrap_or("input".to_string())
+        self.filename.clone().unwrap_or("input.js".to_string())
     }
 }
 

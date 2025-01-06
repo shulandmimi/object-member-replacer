@@ -14,7 +14,11 @@ module.exports = {
     devtool: 'source-map',
     optimization: {
         minimizer: [
-            new OOMPlugin(),
+            new OOMPlugin({
+                ignoreWords: [
+                    "console"
+                ]
+            }),
             new TerserPlugin()
         ],
     },

@@ -1,10 +1,13 @@
 import { transform as t } from "../binding";
+import { ModuleType } from "../type";
 
 export interface TransformOption {
     filename?: string;
     sourceMap?: string;
     enableSourceMap?: boolean;
-    moduleType?: "javascript" | "typescript";
+    moduleType?: ModuleType;
+    ignore_words?: string[];
+    preserve_keywords?: string[];
 }
 
 export interface TransformResult {

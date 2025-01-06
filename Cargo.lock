@@ -770,6 +770,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "itertools",
+ "lazy_static",
  "rustc-hash 2.1.0",
  "tracing",
  "tracing-subscriber",

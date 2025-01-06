@@ -13,6 +13,7 @@ pub struct IdentCollector {
     pub top_level_ident: FxHashSet<String>,
     pub top_level_mark: Mark,
     pub unresolved_mark: Mark,
+    ignore_words: FxHashSet<String>,
 }
 
 impl IdentCollector {
@@ -23,6 +24,7 @@ impl IdentCollector {
             top_level_ident: Default::default(),
             top_level_mark,
             unresolved_mark,
+            ignore_words: Default::default(),
         }
     }
 
@@ -35,10 +37,23 @@ impl IdentCollector {
         let name = ident.sym.as_str();
         self.count_str(name);
     }
+
+    pub fn with_ignore_words(mut self, ignore_words: FxHashSet<String>) -> Self {
+        self.ignore_words = ignore_words;
+        self
+    }
 }
 
 impl Visit for IdentCollector {
     fn visit_member_expr(&mut self, node: &MemberExpr) {
+        if match &node.obj {
+            box Expr::Ident(ref ident) => self.ignore_words.contains(ident.sym.as_str()),
+            _ => false,
+        } {
+            node.visit_children_with(self);
+            return
+        }
+
         match &node.prop {
             MemberProp::Ident(ident_name) => {
                 self.count(ident_name);

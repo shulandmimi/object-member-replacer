@@ -1,11 +1,79 @@
 use rustc_hash::FxHashSet;
+use lazy_static::lazy_static;
 
 use super::constant;
+
+lazy_static! {
+    static ref PRESERVE_KEYWORDS: FxHashSet<&'static str> = {
+        FxHashSet::from_iter([
+            "break",
+            "case",
+            "catch",
+            "class",
+            "const",
+            "continue",
+            "debugger",
+            "default",
+            "delete",
+            "do",
+            "else",
+            "enum",
+            "export",
+            "extends",
+            "false",
+            "finally",
+            "for",
+            "function",
+            "if",
+            "import",
+            "in",
+            "instanceof",
+            "new",
+            "null",
+            "return",
+            "super",
+            "switch",
+            "this",
+            "throw",
+            "true",
+            "try",
+            "typeof",
+            "var",
+            "void",
+            "while",
+            "with",
+            "as",
+            "implements",
+            "interface",
+            "let",
+            "package",
+            "private",
+            "protected",
+            "public",
+            "static",
+            "yield",
+            "any",
+            "boolean",
+            "constructor",
+            "declare",
+            "get",
+            "module",
+            "require",
+            "number",
+            "set",
+            "string",
+            "symbol",
+            "type",
+            "from",
+            "of",
+        ])
+    };
+}
 
 #[derive(Debug, Default)]
 pub struct TokenAllocator {
     pos: usize,
-    used_allocator: FxHashSet<String>,
+    used_ident: FxHashSet<String>,
 }
 
 impl TokenAllocator {
@@ -14,7 +82,11 @@ impl TokenAllocator {
     }
 
     pub fn extends(&mut self, set: FxHashSet<String>) {
-        self.used_allocator.extend(set);
+        self.used_ident.extend(set);
+    }
+
+    pub fn allocable(&self, ident: &str) -> bool {
+        !(PRESERVE_KEYWORDS.contains(ident) || self.used_ident.contains(ident))
     }
 
     fn ident(&self) -> String {
@@ -47,8 +119,8 @@ impl TokenAllocator {
             let s = self.ident();
             self.pos += 1;
 
-            if !self.used_allocator.contains(&s) {
-                self.used_allocator.insert(s.clone());
+            if self.allocable(&s) {
+                self.used_ident.insert(s.clone());
                 return s;
             }
         }
@@ -66,18 +138,18 @@ mod tests {
         let v = (0..200).map(|_| token.alloc()).collect::<Vec<_>>();
 
         assert_eq!(v[0], "a");
-        assert_eq!(v[199], "cR");
+        assert_eq!(v[199], "cS");
     }
 
     #[test]
     fn ident_alloc_with_used() {
         let mut token = TokenAllocator::new();
 
-        token.used_allocator.insert("b".to_string());
+        token.used_ident.insert("b".to_string());
 
         let v = (0..200).map(|_| token.alloc()).collect::<Vec<_>>();
 
         assert_eq!(v[0], "a");
-        assert_eq!(v[199], "cS");
+        assert_eq!(v[199], "cT");
     }
 }
