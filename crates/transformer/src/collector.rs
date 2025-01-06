@@ -94,14 +94,14 @@ impl Visit for IdentCollector {
         }
 
         if is_matched {
-            self.with_state(MemberMatcherState::Matche, |this| {
+            self.with_state(MemberMatcherState::Match, |this| {
                 node.visit_with(this);
             });
             return;
         }
 
         {
-            let is_match_mode = matches!(self.state, MemberMatcherState::Matche);
+            let is_match_mode = matches!(self.state, MemberMatcherState::Match);
             match &node.obj {
                 box Expr::Member(member) => {
                     member.visit_with(self);
@@ -139,9 +139,7 @@ impl Visit for IdentCollector {
     }
 
     fn visit_lit(&mut self, lit: &Lit) {
-        if self.string_literal_enable
-            && let Lit::Str(lit) = lit
-        {
+        if let Lit::Str(lit) = lit {
             self.count_lit(lit);
         } else {
             lit.visit_children_with(self);
@@ -152,7 +150,6 @@ impl Visit for IdentCollector {
 #[derive(Debug, Default)]
 struct TrieNode {
     children: FxHashMap<Rc<String>, Rc<RefCell<TrieNode>>>,
-    key: Rc<String>,
     mark: bool,
 }
 
@@ -173,7 +170,6 @@ impl Trie {
                     key.clone(),
                     Rc::new(RefCell::new(TrieNode {
                         children: Default::default(),
-                        key: key.clone(),
                         mark: false,
                     })),
                 );
@@ -228,12 +224,11 @@ impl From<Vec<String>> for Trie {
 
 struct MemberMatcherResult {
     is_matched: bool,
-    idents: FxHashMap<String, Span>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Copy)]
 enum MemberMatcherState {
-    Matche,
+    Match,
     #[default]
     Visitor,
 }
@@ -242,7 +237,7 @@ struct MemberMatcher<'a> {
     pub field: &'a Trie,
     pub paths: Vec<(String, Id, Span)>,
     pub state: MemberMatcherState,
-    pub idents: Vec<(String, Id, Span)>,
+    pub ident_list: Vec<(String, Id, Span)>,
     pub matched: bool,
 }
 
@@ -252,14 +247,14 @@ impl<'a> MemberMatcher<'a> {
             field: trie,
             paths: Default::default(),
             state: Default::default(),
-            idents: Default::default(),
+            ident_list: Default::default(),
             matched: false,
         }
     }
 
     fn with_state<F: FnOnce(&mut Self)>(&mut self, state: MemberMatcherState, f: F) {
         let prev = self.state;
-        let prev_data = if matches!(prev, MemberMatcherState::Matche) && prev != state {
+        let prev_data = if matches!(prev, MemberMatcherState::Match) && prev != state {
             Some(self.paths.take())
         } else {
             None
@@ -275,26 +270,13 @@ impl<'a> MemberMatcher<'a> {
     fn take_result(self) -> MemberMatcherResult {
         MemberMatcherResult {
             is_matched: self.matched,
-            idents: self
-                .idents
-                .into_iter()
-                .map(|(ident, _, span)| (ident, span))
-                .collect(),
         }
     }
-
-    // fn try_match_member_expr<'a>(&mut self, node: &'a mut MemberExpr) -> TryMatchMemberExprResult<'a> {
-
-    //     // TryMatchMemberExprResult {
-    //     //     is_matched: is_end && is_ident_chain,
-    //     //     walkable_items: result,
-    //     // }
-    // }
 }
 
 impl Visit for MemberMatcher<'_> {
     fn visit_member_expr(&mut self, node: &MemberExpr) {
-        self.with_state(MemberMatcherState::Matche, |this| {
+        self.with_state(MemberMatcherState::Match, |this| {
             let mut is_end = false;
             let mut is_ident_chain = false;
 
@@ -355,7 +337,7 @@ impl Visit for MemberMatcher<'_> {
                     let mut paths = this.paths.take();
                     paths.pop();
                     paths.reverse();
-                    this.idents.extend(paths)
+                    this.ident_list.extend(paths)
                 }
 
                 this.paths.clear();
@@ -420,12 +402,6 @@ a.c.d
 
         // let mut matcher = MemberMatcher::new(&trie);
         v.visit_with(&mut collector);
-
-        println!("{:#?}", collector);
-
-        // v.visit_with(&mut matcher);
-
-        // println!("{:#?}", matcher.idents);
 
         Ok(())
     }

@@ -91,6 +91,13 @@ impl IdentReplacer {
 
 impl VisitMut for IdentReplacer {
     fn visit_mut_member_expr(&mut self, node: &mut MemberExpr) {
+        match &mut node.obj {
+            box Expr::Ident(_) => {}
+            _ => {
+                node.obj.visit_mut_with(self);
+            }
+        }
+
         let mut is_replaced = false;
         match &mut node.prop {
             MemberProp::Ident(ident) => {
@@ -151,9 +158,7 @@ impl VisitMut for IdentReplacer {
     }
 
     fn visit_mut_expr(&mut self, node: &mut Expr) {
-        if self.string_literal_enable
-            && let Expr::Lit(Lit::Str(lit)) = node
-        {
+        if let Expr::Lit(Lit::Str(lit)) = node {
             let v = lit.value.as_str();
             if self.contain(v, lit.span) {
                 *node = Expr::Ident(self.create_ident(v));

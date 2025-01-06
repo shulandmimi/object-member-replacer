@@ -1,6 +1,5 @@
 use std::{
     cell::OnceCell,
-    collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -355,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn require_fileds() -> Result<()> {
+    fn require_fields() -> Result<()> {
         fn create_result(options: TransformOption) -> Result<TransformResult> {
             transform(
                 r#"

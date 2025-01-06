@@ -1,6 +1,6 @@
 const { OOMPlugin } = require("@oomm/transformer/webpack");
 const TerserPlugin = require("terser-webpack-plugin");
-const webpack = require('webpack');
+const webpack = require("webpack");
 
 /**
  * @type {import('webpack').Configuration}
@@ -10,38 +10,26 @@ module.exports = {
     module: {
         rules: [],
     },
-    target: 'node',
+    target: "node",
     mode: "production",
-    plugins: [
-        new webpack.DefinePlugin({
-            'process.env.NODE_ENV': JSON.stringify('production'),
-            '__target__': JSON.stringify('node'),
-            'a.b.c': JSON.stringify('a.b.c'),
-            'a.b': JSON.stringify('a.b'),
-            'a(a.b.c).b.c': JSON.stringify('a.b.c'),
-        })
-    ],
-    devtool: 'source-map',
+    plugins: [],
+    devtool: "source-map",
     optimization: {
         minimizer: [
-            // new OOMPlugin({
-            //     ignoreWords: [
-            //         "console",
-            //         "require",
-            //     ],
-            //     stringLiteral: false,
-            // }),
-            // new TerserPlugin()
+            new OOMPlugin({
+                ignoreWords: ["process.env.GOGOGO", "require", "require.async"],
+            }),
+            new TerserPlugin(),
         ],
         splitChunks: {
             cacheGroups: {
                 foo: {
                     test: /foo\.js$/,
-                    name: 'foo',
-                    chunks: 'all',
+                    name: "foo",
+                    chunks: "all",
                     minSize: 0,
-                }
-            }
-        }
+                },
+            },
+        },
     },
 };
