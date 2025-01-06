@@ -103,14 +103,13 @@ pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
     );
 
     // collection
-    let mut collector = IdentCollector::new(unresolved_mark, top_level_mark)
-        .with_ignore_words(context.options.ignore_words.iter().cloned().collect());
+    let mut collector = IdentCollector::new(unresolved_mark, top_level_mark).with_context(context);
 
     module.visit_with(&mut collector);
 
     let IdentCollector {
         field,
-        unresolved_ident,
+        used_ident,
         ..
     } = collector;
 
@@ -122,10 +121,9 @@ pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
     }
 
     // replace ident
-    let mut replacer = IdentReplacer::new(map.into_keys().collect());
+    let mut replacer = IdentReplacer::new(map.into_keys().collect()).with_context(context);
 
-    replacer.extend_used_ident(unresolved_ident);
-    replacer.extend_used_ident(context.options.preserve_keywords.iter().cloned().collect());
+    replacer.extend_used_ident(used_ident);
     module.visit_mut_with(&mut replacer);
 
     // insert replaced ident
@@ -167,7 +165,7 @@ pub fn codegen(
     Ok(buf)
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransformOption {
     filename: Option<String>,
@@ -176,9 +174,27 @@ pub struct TransformOption {
     enable_source_map: bool,
     module_type: Option<ModuleType>,
     #[serde(default)]
-    preserve_keywords: Vec<String>,
+    pub(crate) preserve_keywords: Vec<String>,
+
+    // TODO: support ignore object and object ident
     #[serde(default)]
-    ignore_words: Vec<String>,
+    pub(crate) ignore_words: Vec<String>,
+    #[serde(default)]
+    pub(crate) string_literal: bool,
+}
+
+impl Default for TransformOption {
+    fn default() -> Self {
+        Self {
+            filename: None,
+            source_map: None,
+            enable_source_map: false,
+            module_type: None,
+            preserve_keywords: vec![],
+            ignore_words: vec![],
+            string_literal: true,
+        }
+    }
 }
 
 impl TransformOption {
@@ -197,7 +213,7 @@ pub struct TransformResult {
 #[allow(dead_code)]
 pub struct TransformContext {
     module_type: ModuleType,
-    options: TransformOption,
+    pub options: TransformOption,
     globals: Arc<Globals>,
 }
 
@@ -314,6 +330,96 @@ mod tests {
         let result = transform(input.to_string(), Default::default())?;
 
         println!("{}", result.content);
+
+        Ok(())
+    }
+
+    #[test]
+    fn require_fileds() -> Result<()> {
+        fn create_result(options: TransformOption) -> Result<TransformResult> {
+            transform(
+                r#"
+    require.async("./foo.js");
+    require.async("./foo.js");
+    require.async("./foo.js");
+    require.async("./foo.js");
+    require.async("./foo.js");
+    require.async("./foo.js");
+    require.async("./foo.js");
+    "#
+                .to_string(),
+                options,
+            )
+        }
+
+        fn assert_result(options: TransformOption, snapshot: &str) -> Result<()> {
+            let result = create_result(options)?;
+            assert_eq!(result.content.trim(), snapshot.trim());
+            Ok(())
+        }
+
+        fn string_literal_disable() -> TransformOption {
+            TransformOption {
+                string_literal: false,
+                ..Default::default()
+            }
+        }
+
+        fn disable_require_filed() -> TransformOption {
+            TransformOption {
+                ignore_words: vec!["require".to_string()],
+                ..Default::default()
+            }
+        }
+
+        assert_result(
+            string_literal_disable(),
+            r#"var a = "async";
+require[a]("./foo.js");
+require[a]("./foo.js");
+require[a]("./foo.js");
+require[a]("./foo.js");
+require[a]("./foo.js");
+require[a]("./foo.js");
+require[a]("./foo.js");"#,
+        )?;
+
+        assert_result(
+            disable_require_filed(),
+            r#"var a = "./foo.js";
+require.async(a);
+require.async(a);
+require.async(a);
+require.async(a);
+require.async(a);
+require.async(a);
+require.async(a);"#,
+        )?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn require() -> Result<()> {
+        let input = r#"
+require("./foo.js");
+require("./foo.js");
+require("./foo.js");
+require("./foo.js");
+require("./foo.js");
+require("./foo.js");
+require("./foo.js");
+        "#;
+
+        let result = transform(
+            input.to_string(),
+            TransformOption {
+                string_literal: false,
+                ..Default::default()
+            },
+        )?;
+
+        assert_eq!(result.content.trim(), input.trim());
 
         Ok(())
     }

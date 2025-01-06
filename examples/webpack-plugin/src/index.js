@@ -1,4 +1,8 @@
+const fooFn = require('./foo');
+
 var a = {};
+
+fooFn();
 
 a.foo_foo_bar_foo_foo = { f1: 0 };
 console.log(a.foo_foo_bar_foo_foo);

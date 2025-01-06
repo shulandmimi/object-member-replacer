@@ -1,5 +1,6 @@
 #![deny(clippy::all)]
 #![feature(box_patterns)]
+#![feature(let_chains)]
 
 mod collector;
 mod replacer;

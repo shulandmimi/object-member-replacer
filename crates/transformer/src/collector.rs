@@ -4,6 +4,8 @@ use swc_common::Mark;
 use swc_ecma_ast::{Expr, IdentName, Lit, MemberExpr, MemberProp};
 use swc_ecma_visit::{Visit, VisitWith};
 
+use crate::transformer::TransformContext;
+
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct IdentCollector {
@@ -11,9 +13,11 @@ pub struct IdentCollector {
     // TODO: collect more detailed data, such as variable declarations, parameters, functions, etc.
     pub unresolved_ident: FxHashSet<String>,
     pub top_level_ident: FxHashSet<String>,
+    pub used_ident: FxHashSet<String>,
     pub top_level_mark: Mark,
     pub unresolved_mark: Mark,
     ignore_words: FxHashSet<String>,
+    string_literal_enable: bool,
 }
 
 impl IdentCollector {
@@ -25,6 +29,8 @@ impl IdentCollector {
             top_level_mark,
             unresolved_mark,
             ignore_words: Default::default(),
+            string_literal_enable: Default::default(),
+            used_ident: Default::default()
         }
     }
 
@@ -38,8 +44,9 @@ impl IdentCollector {
         self.count_str(name);
     }
 
-    pub fn with_ignore_words(mut self, ignore_words: FxHashSet<String>) -> Self {
-        self.ignore_words = ignore_words;
+    pub fn with_context(mut self, context: &TransformContext) -> Self {
+        self.ignore_words = context.options.ignore_words.iter().cloned().collect();
+        self.string_literal_enable = context.options.string_literal;
         self
     }
 }
@@ -72,13 +79,11 @@ impl Visit for IdentCollector {
     }
 
     fn visit_ident(&mut self, ident: &swc_ecma_ast::Ident) {
-        if ident.ctxt.outer() == self.unresolved_mark {
-            self.unresolved_ident.insert(ident.sym.to_string());
-        }
+        self.used_ident.insert(ident.sym.to_string());
     }
 
     fn visit_lit(&mut self, lit: &Lit) {
-        if let Lit::Str(lit) = lit {
+        if self.string_literal_enable && let Lit::Str(lit) = lit {
             self.count_str(lit.value.as_str());
         } else {
             lit.visit_children_with(self);

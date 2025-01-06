@@ -97,7 +97,7 @@ export class OOMPlugin {
 
                             output = {
                                 name,
-                                code: result.code,
+                                code: result.code ?? inputCode,
                                 map: result.map ?? map,
                             };
 

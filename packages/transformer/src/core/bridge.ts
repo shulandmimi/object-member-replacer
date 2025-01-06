@@ -6,8 +6,9 @@ export interface TransformOption {
     sourceMap?: string;
     enableSourceMap?: boolean;
     moduleType?: ModuleType;
-    ignore_words?: string[];
-    preserve_keywords?: string[];
+    ignoreWords?: string[];
+    preserveKeywords?: string[];
+    stringLiteral?: boolean
 }
 
 export interface TransformResult {

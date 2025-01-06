@@ -9,6 +9,7 @@ module.exports = {
     module: {
         rules: [],
     },
+    target: 'node',
     mode: "production",
     plugins: [],
     devtool: 'source-map',
@@ -16,10 +17,22 @@ module.exports = {
         minimizer: [
             new OOMPlugin({
                 ignoreWords: [
-                    "console"
-                ]
+                    "console",
+                    "require",
+                ],
+                stringLiteral: false,
             }),
-            new TerserPlugin()
+            // new TerserPlugin()
         ],
+        splitChunks: {
+            cacheGroups: {
+                foo: {
+                    test: /foo\.js$/,
+                    name: 'foo',
+                    chunks: 'all',
+                    minSize: 0,
+                }
+            }
+        }
     },
 };

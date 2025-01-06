@@ -8,5 +8,5 @@ export enum ModuleType {
 export interface OOMPluginOptions
     extends Pick<
         TransformOption,
-        "enableSourceMap" | "ignore_words" | "preserve_keywords"
+        "enableSourceMap" | "ignoreWords" | "preserveKeywords" | "stringLiteral"
     > {}

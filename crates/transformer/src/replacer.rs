@@ -7,11 +7,14 @@ use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use omm_core::TokenAllocator;
 
+use crate::transformer::TransformContext;
+
 #[derive(Debug)]
 pub struct IdentReplacer {
     pub should_replace_ident_list: FxHashSet<String>,
     pub ident_map: FxHashMap<String, String>,
     pub allocator: TokenAllocator,
+    pub string_literal_enable: bool,
 }
 
 impl IdentReplacer {
@@ -20,7 +23,14 @@ impl IdentReplacer {
             should_replace_ident_list: set,
             allocator: TokenAllocator::new(),
             ident_map: FxHashMap::default(),
+            string_literal_enable: true,
         }
+    }
+
+    pub fn with_context(mut self, context: &TransformContext) -> Self {
+        self.string_literal_enable = context.options.string_literal;
+        self.extend_used_ident(context.options.preserve_keywords.iter().cloned().collect());
+        self
     }
 
     pub fn extend_used_ident(&mut self, set: FxHashSet<String>) {
@@ -144,7 +154,7 @@ impl VisitMut for IdentReplacer {
     }
 
     fn visit_mut_expr(&mut self, node: &mut Expr) {
-        if let Expr::Lit(Lit::Str(lit)) = node {
+        if self.string_literal_enable && let Expr::Lit(Lit::Str(lit)) = node {
             let v = lit.value.as_str();
             if self.contain(v) {
                 *node = Expr::Ident(self.create_ident(v));
