@@ -1,5 +1,6 @@
 use std::{
     cell::OnceCell,
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -7,6 +8,7 @@ use std::{
 use enhanced_magic_string::collapse_sourcemap::CollapseSourcemapOptions;
 use itertools::Itertools;
 use omm_core::filter_cannot_compress_ident;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use swc_common::{BytePos, FileName, Globals, LineCol, SourceMap};
 use swc_ecma_ast::{
@@ -108,20 +110,38 @@ pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
     module.visit_with(&mut collector);
 
     let IdentCollector {
-        field,
+        mut field,
         used_ident,
         ..
     } = collector;
 
+    let filterable_map = field
+        .iter()
+        .map(|(ident, (_, count))| (ident.clone(), *count))
+        .collect::<FxHashMap<_, _>>();
+
     // filter does not have to be replaced
-    let map = filter_cannot_compress_ident(field);
+    let map = filter_cannot_compress_ident(filterable_map);
 
     if map.is_empty() {
         return;
     }
 
+    let keys = field.keys().cloned().collect::<Vec<_>>();
+    for key in keys {
+        if !map.contains_key(&key) {
+            field.remove(&key);
+        }
+    }
+
     // replace ident
-    let mut replacer = IdentReplacer::new(map.into_keys().collect()).with_context(context);
+    let mut replacer = IdentReplacer::new(
+        field
+            .into_iter()
+            .map(|(k, (spans, _))| (k, spans))
+            .collect(),
+    )
+    .with_context(context);
 
     replacer.extend_used_ident(used_ident);
     module.visit_mut_with(&mut replacer);
@@ -168,11 +188,11 @@ pub fn codegen(
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransformOption {
-    filename: Option<String>,
-    source_map: Option<String>,
+    pub filename: Option<String>,
+    pub source_map: Option<String>,
     #[serde(default)]
-    enable_source_map: bool,
-    module_type: Option<ModuleType>,
+    pub enable_source_map: bool,
+    pub module_type: Option<ModuleType>,
     #[serde(default)]
     pub(crate) preserve_keywords: Vec<String>,
 
@@ -212,9 +232,9 @@ pub struct TransformResult {
 
 #[allow(dead_code)]
 pub struct TransformContext {
-    module_type: ModuleType,
+    pub module_type: ModuleType,
     pub options: TransformOption,
-    globals: Arc<Globals>,
+    pub globals: Arc<Globals>,
 }
 
 #[allow(clippy::declare_interior_mutable_const)]
