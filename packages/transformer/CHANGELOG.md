@@ -1,5 +1,11 @@
 # @oomm/transformer
 
+## 0.0.16
+
+### Patch Changes
+
+- 84cccc1: support execlude string literal minify
+
 ## 0.0.15
 
 ### Patch Changes
