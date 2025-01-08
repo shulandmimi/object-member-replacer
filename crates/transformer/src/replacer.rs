@@ -16,20 +16,21 @@ pub struct IdentReplacer {
     pub ident_map: FxHashMap<String, String>,
     pub allocator: TokenAllocator,
     pub string_literal_enable: bool,
+    skip_lits: FxHashSet<Span>
 }
 
 impl IdentReplacer {
-    pub fn new(set: FxHashMap<String, FxHashSet<Span>>) -> Self {
+    pub fn new(set: FxHashMap<String, FxHashSet<Span>>, skip_lits: FxHashSet<Span>) -> Self {
         Self {
             should_replace_ident_list: set,
             allocator: TokenAllocator::new(),
             ident_map: FxHashMap::default(),
             string_literal_enable: true,
+            skip_lits,
         }
     }
 
     pub fn with_context(mut self, context: &TransformContext) -> Self {
-        self.string_literal_enable = context.options.string_literal;
         self.extend_used_ident(context.options.preserve_keywords.iter().cloned().collect());
         self
     }
@@ -39,6 +40,10 @@ impl IdentReplacer {
     }
 
     pub fn contain(&self, ident: &str, span: Span) -> bool {
+        if self.skip_lits.contains(&span) {
+            return false;
+        }
+
         self.should_replace_ident_list
             .get(ident)
             .is_some_and(|spans| spans.contains(&span))

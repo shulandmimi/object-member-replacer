@@ -111,6 +111,7 @@ pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
     let IdentCollector {
         mut field,
         used_ident,
+        skip_lits,
         ..
     } = collector;
 
@@ -139,6 +140,7 @@ pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
             .into_iter()
             .map(|(k, (spans, _))| (k, spans))
             .collect(),
+        skip_lits,
     )
     .with_context(context);
 
@@ -184,7 +186,62 @@ pub fn codegen(
     Ok(buf)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase", default = "Default::default")]
+pub struct IgnoreWordOptions {
+    pub path: String,
+    pub subpath: bool,
+    /// if match path, args lit will be ignore
+    pub skip_lit_arg: bool,
+}
+
+impl Default for IgnoreWordOptions {
+    fn default() -> Self {
+        Self {
+            path: "".to_string(),
+            subpath: true,
+            skip_lit_arg: false,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged, rename_all = "camelCase")]
+pub enum IgnoreWord {
+    Object(IgnoreWordOptions),
+    Simple(String),
+}
+
+impl IgnoreWord {
+    pub fn path(&self) -> &str {
+        match self {
+            IgnoreWord::Object(options) => &options.path,
+            IgnoreWord::Simple(v) => v,
+        }
+    }
+
+    pub fn subpath(&self) -> bool {
+        match self {
+            IgnoreWord::Object(options) => options.subpath,
+            IgnoreWord::Simple(_) => IgnoreWordOptions::default().subpath,
+        }
+    }
+
+    pub fn skip_lit_arg(&self) -> bool {
+        match self {
+            IgnoreWord::Object(options) => options.skip_lit_arg,
+            IgnoreWord::Simple(_) => IgnoreWordOptions::default().skip_lit_arg,
+        }
+    }
+}
+
+impl<T: AsRef<str>> From<T> for IgnoreWord {
+    fn from(value: T) -> Self {
+        IgnoreWord::Simple(value.as_ref().to_string())
+    }
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransformOption {
     pub filename: Option<String>,
@@ -197,24 +254,21 @@ pub struct TransformOption {
 
     // TODO: support ignore object and object ident
     #[serde(default)]
-    pub(crate) ignore_words: Vec<String>,
-    #[serde(default)]
-    pub(crate) string_literal: bool,
+    pub(crate) ignore_words: Vec<IgnoreWord>,
 }
 
-impl Default for TransformOption {
-    fn default() -> Self {
-        Self {
-            filename: None,
-            source_map: None,
-            enable_source_map: false,
-            module_type: None,
-            preserve_keywords: vec![],
-            ignore_words: vec![],
-            string_literal: true,
-        }
-    }
-}
+// impl Default for TransformOption {
+//     fn default() -> Self {
+//         Self {
+//             filename: None,
+//             source_map: None,
+//             enable_source_map: false,
+//             module_type: None,
+//             preserve_keywords: vec![],
+//             ignore_words: vec![],
+//         }
+//     }
+// }
 
 impl TransformOption {
     fn filename(&self) -> String {
@@ -373,26 +427,20 @@ mod tests {
 
         fn assert_result(options: TransformOption, snapshot: &str) -> Result<()> {
             let result = create_result(options)?;
+
             assert_eq!(result.content.trim(), snapshot.trim());
             Ok(())
         }
 
-        fn string_literal_disable() -> TransformOption {
-            TransformOption {
-                string_literal: false,
-                ..Default::default()
-            }
-        }
-
-        fn disable_require_filed() -> TransformOption {
-            TransformOption {
-                ignore_words: vec!["require".to_string()],
-                ..Default::default()
-            }
-        }
-
         assert_result(
-            string_literal_disable(),
+            TransformOption {
+                ignore_words: vec![IgnoreWord::Object(IgnoreWordOptions {
+                    path: "require".to_string(),
+                    subpath: true,
+                    skip_lit_arg: true,
+                })],
+                ..Default::default()
+            },
             r#"var a = "async";
 require[a]("./foo.js");
 require[a]("./foo.js");
@@ -404,7 +452,14 @@ require[a]("./foo.js");"#,
         )?;
 
         assert_result(
-            disable_require_filed(),
+            TransformOption {
+                ignore_words: vec![IgnoreWord::Object(IgnoreWordOptions {
+                    path: "require".to_string(),
+                    subpath: false,
+                    skip_lit_arg: false,
+                })],
+                ..Default::default()
+            },
             r#"var a = "./foo.js";
 require.async(a);
 require.async(a);
@@ -433,7 +488,11 @@ require("./foo.js");
         let result = transform(
             input.to_string(),
             TransformOption {
-                string_literal: false,
+                ignore_words: vec![IgnoreWord::Object(IgnoreWordOptions {
+                    path: "require".to_string(),
+                    subpath: false,
+                    skip_lit_arg: true,
+                })],
                 ..Default::default()
             },
         )?;

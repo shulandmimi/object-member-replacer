@@ -1,13 +1,14 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, mem, rc::Rc};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use swc_common::{util::take::Take, Mark, Span};
-use swc_ecma_ast::{Expr, Id, IdentName, Lit, MemberExpr, MemberProp, Str};
-use swc_ecma_utils::ident::IdentLike;
+use swc_ecma_ast::{
+    CallExpr, Callee, Expr, ExprOrSpread, Ident, IdentName, Lit, MemberExpr, MemberProp, Str,
+};
 use swc_ecma_visit::{Visit, VisitWith};
 
-use crate::transformer::TransformContext;
+use crate::{transformer::TransformContext, IgnoreWord};
 
 pub type IdentCollectorData = FxHashMap<String, (FxHashSet<Span>, usize)>;
 
@@ -15,16 +16,16 @@ pub type IdentCollectorData = FxHashMap<String, (FxHashSet<Span>, usize)>;
 #[derive(Debug)]
 pub struct IdentCollector {
     pub field: IdentCollectorData,
+    pub skip_lits: FxHashSet<Span>,
     // TODO: collect more detailed data, such as variable declarations, parameters, functions, etc.
     pub unresolved_ident: FxHashSet<String>,
     pub top_level_ident: FxHashSet<String>,
     pub used_ident: FxHashSet<String>,
     pub top_level_mark: Mark,
     pub unresolved_mark: Mark,
-    ignore_words: FxHashSet<String>,
-    string_literal_enable: bool,
-    trie: Trie,
+    trie: Trie<IgnoreWord>,
     state: MemberMatcherState,
+    pending_store_arg_lits: FxHashSet<(Str, Span)>,
 }
 
 impl IdentCollector {
@@ -35,11 +36,11 @@ impl IdentCollector {
             top_level_ident: Default::default(),
             top_level_mark,
             unresolved_mark,
-            ignore_words: Default::default(),
-            string_literal_enable: Default::default(),
             used_ident: Default::default(),
-            trie: Default::default(),
+            trie: Trie::new(),
             state: MemberMatcherState::default(),
+            skip_lits: Default::default(),
+            pending_store_arg_lits: Default::default(),
         }
     }
 
@@ -54,6 +55,9 @@ impl IdentCollector {
     }
 
     fn count_lit(&mut self, ident: &Str) {
+        if self.skip_lits.contains(&ident.span) {
+            return;
+        }
         self.count_str(&ident.value, ident.span);
     }
 
@@ -62,9 +66,11 @@ impl IdentCollector {
     }
 
     pub fn with_context(mut self, context: &TransformContext) -> Self {
-        // self.ignore_words = context.options.ignore_words.iter().cloned().collect();
-        self.trie = Trie::from(context.options.ignore_words.to_vec());
-        self.string_literal_enable = context.options.string_literal;
+        for item in context.options.ignore_words.iter() {
+            self.trie
+                .insert(item.path().to_string(), Some(item.clone()));
+        }
+
         self
     }
 
@@ -74,9 +80,62 @@ impl IdentCollector {
         f(self);
         self.state = prev;
     }
+
+    fn process_matcher_result(&mut self, matcher_result: MemberMatcherResult) -> bool {
+        let pending_store_arg_lits = mem::take(&mut self.pending_store_arg_lits);
+
+        let MemberMatcherResult {
+            is_matched: matched,
+            ident_list,
+            match_result,
+            ..
+        } = matcher_result;
+
+        for (ident, span) in ident_list {
+            self.count_str(&ident, span);
+        }
+
+        #[allow(clippy::collapsible_match)]
+        if let Some((_, options)) = match_result {
+            if let Some(ref options) = options {
+                if options.skip_lit_arg() {
+                    self.skip_lits.extend(
+                        pending_store_arg_lits
+                            .into_iter()
+                            .map(|(_, span)| span)
+                            .collect::<Vec<_>>(),
+                    );
+                } else {
+                    pending_store_arg_lits.into_iter().for_each(|(lit, _)| {
+                        self.count_lit(&lit);
+                    });
+                }
+            }
+        }
+
+        matched
+    }
 }
 
 impl Visit for IdentCollector {
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if matches!(self.state, MemberMatcherState::Visitor)
+            && let Callee::Expr(ref expr) = node.callee
+            && matches!(expr, box Expr::Member(_) | box Expr::Ident(_))
+        {
+            node.args.iter().for_each(|arg| {
+                #[allow(clippy::collapsible_match)]
+                #[allow(irrefutable_let_patterns)]
+                if let ExprOrSpread { box expr, .. } = arg {
+                    if let Expr::Lit(Lit::Str(ref lit)) = expr {
+                        self.pending_store_arg_lits.insert((lit.clone(), lit.span));
+                    }
+                }
+            });
+        }
+        node.visit_children_with(self);
+    }
+
     fn visit_member_expr(&mut self, node: &MemberExpr) {
         let mut is_matched = false;
 
@@ -85,12 +144,11 @@ impl Visit for IdentCollector {
 
             node.visit_with(&mut matcher);
 
-            let MemberMatcherResult {
-                is_matched: matched,
-                ..
-            } = matcher.take_result();
+            let matched = self.process_matcher_result(matcher.take_result());
 
             is_matched = matched;
+        } else {
+            self.pending_store_arg_lits.clear();
         }
 
         if is_matched {
@@ -135,6 +193,19 @@ impl Visit for IdentCollector {
     }
 
     fn visit_ident(&mut self, ident: &swc_ecma_ast::Ident) {
+
+        if matches!(self.state, MemberMatcherState::Visitor)
+            && !self.pending_store_arg_lits.is_empty()
+        {
+            let mut matcher = MemberMatcher::new(&self.trie);
+
+            ident.visit_with(&mut matcher);
+
+            if self.process_matcher_result(matcher.take_result()) {
+                return
+            };
+        }
+
         self.used_ident.insert(ident.sym.to_string());
     }
 
@@ -148,20 +219,30 @@ impl Visit for IdentCollector {
 }
 
 #[derive(Debug, Default)]
-struct TrieNode {
-    children: FxHashMap<Rc<String>, Rc<RefCell<TrieNode>>>,
+struct TrieNode<T: Debug> {
+    children: FxHashMap<Rc<String>, Rc<RefCell<TrieNode<T>>>>,
     mark: bool,
+    value: Option<Rc<T>>,
 }
 
 #[derive(Debug, Default)]
-struct Trie {
-    root: Rc<RefCell<TrieNode>>,
+struct Trie<T: Debug> {
+    root: Rc<RefCell<TrieNode<T>>>,
 }
 
-impl Trie {
-    fn insert(&mut self, value: String) {
+impl<T: Debug> Trie<T> {
+    fn new() -> Self {
+        Self {
+            root: Rc::new(RefCell::new(TrieNode {
+                children: Default::default(),
+                mark: false,
+                value: Default::default(),
+            })),
+        }
+    }
+    fn insert(&mut self, key: String, value: Option<T>) {
         let mut current = self.root.clone();
-        for ch in value.split('.') {
+        for ch in key.split('.') {
             let key = Rc::new(ch.to_string());
             let mut current_ref = current.borrow_mut();
 
@@ -171,6 +252,7 @@ impl Trie {
                     Rc::new(RefCell::new(TrieNode {
                         children: Default::default(),
                         mark: false,
+                        value: Default::default(),
                     })),
                 );
             }
@@ -183,39 +265,52 @@ impl Trie {
         }
 
         current.borrow_mut().mark = true;
+        current.borrow_mut().value = value.map(Rc::new);
     }
 
-    fn query(&self, value: String) -> bool {
+    fn query(&self, paths: String) -> Option<(usize, Option<Rc<T>>)> {
         let mut current = self.root.clone();
-        let mut near_mark = false;
-        for ch in value.split('.') {
+        let mut near_mark = None;
+        let mut value = None;
+        let keys = paths.split('.').collect::<Vec<_>>();
+        let len = keys.len();
+
+        for (index, ch) in keys.into_iter().enumerate() {
             let key = Rc::new(ch.to_string());
             let current_ref = current.borrow();
 
-            near_mark = current_ref.mark;
+            let Some(next) = current_ref.children.get(&key).cloned() else {
+                return near_mark.map(|pos| (pos, value));
+            };
+            drop(current_ref);
+            let item = next.borrow();
 
-            if !current_ref.children.contains_key(&key) {
-                return near_mark;
+            if item.mark {
+                near_mark = Some(index);
+                value = item.value.clone();
             }
 
-            let v = current_ref.children.get(&key).unwrap().clone();
-            drop(current_ref);
+            drop(item);
 
-            current = v;
+            current = next;
         }
 
         let v = current.borrow();
 
-        v.mark || near_mark
+        if v.mark {
+            Some((len - 1, v.value.clone()))
+        } else {
+            near_mark.map(|pos| (pos, value.clone()))
+        }
     }
 }
 
-impl From<Vec<String>> for Trie {
+impl From<Vec<String>> for Trie<String> {
     fn from(value: Vec<String>) -> Self {
         let mut root = Trie::default();
 
         for item in value {
-            root.insert(item);
+            root.insert(item.clone(), Some(item));
         }
 
         root
@@ -224,6 +319,8 @@ impl From<Vec<String>> for Trie {
 
 struct MemberMatcherResult {
     is_matched: bool,
+    ident_list: Vec<(String, Span)>,
+    match_result: Option<(usize, Option<Rc<IgnoreWord>>)>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Copy)]
@@ -233,34 +330,35 @@ enum MemberMatcherState {
     Visitor,
 }
 #[derive(Debug)]
-struct MemberMatcher<'a> {
-    pub field: &'a Trie,
-    pub paths: Vec<(String, Id, Span)>,
+struct MemberMatcher<'a, T: Debug> {
+    pub field: &'a Trie<T>,
+    pub paths: Vec<(String, Span)>,
     pub state: MemberMatcherState,
-    pub ident_list: Vec<(String, Id, Span)>,
+    pub ident_list: Vec<(String, Span)>,
     pub matched: bool,
+    matchd_result: Option<(usize, Option<Rc<IgnoreWord>>)>,
 }
 
-impl<'a> MemberMatcher<'a> {
-    fn new(trie: &'a Trie) -> Self {
+impl<'a, T: Debug> MemberMatcher<'a, T> {
+    fn new(trie: &'a Trie<T>) -> Self {
         Self {
             field: trie,
             paths: Default::default(),
             state: Default::default(),
             ident_list: Default::default(),
             matched: false,
+            matchd_result: None,
         }
     }
 
     fn with_state<F: FnOnce(&mut Self)>(&mut self, state: MemberMatcherState, f: F) {
         let prev = self.state;
-        let prev_data = if matches!(prev, MemberMatcherState::Match) && prev != state {
-            Some(self.paths.take())
-        } else {
-            None
-        };
+        let prev_data =
+            (matches!(prev, MemberMatcherState::Match) && prev != state).then(|| self.paths.take());
         self.state = state;
+
         f(self);
+
         self.state = prev;
         if let Some(data) = prev_data {
             self.paths = data;
@@ -270,11 +368,34 @@ impl<'a> MemberMatcher<'a> {
     fn take_result(self) -> MemberMatcherResult {
         MemberMatcherResult {
             is_matched: self.matched,
+            ident_list: self.ident_list,
+            match_result: self.matchd_result,
+        }
+    }
+
+    fn process_match_result(&mut self, match_result: Option<(usize, Option<Rc<IgnoreWord>>)>) {
+        self.matched = match_result.is_some();
+
+        if let Some((pos, options)) = match_result {
+            let mut paths = self.paths.take();
+
+            if let Some(ref options) = options {
+                let pos = paths.len().max(1) - 1 - pos;
+
+                if options.subpath() {
+                    paths.truncate(pos);
+
+                    paths.reverse();
+                    self.ident_list.extend(paths);
+                }
+            }
+
+            self.matchd_result = Some((pos, options));
         }
     }
 }
 
-impl Visit for MemberMatcher<'_> {
+impl Visit for MemberMatcher<'_, IgnoreWord> {
     fn visit_member_expr(&mut self, node: &MemberExpr) {
         self.with_state(MemberMatcherState::Match, |this| {
             let mut is_end = false;
@@ -282,25 +403,21 @@ impl Visit for MemberMatcher<'_> {
 
             match &node.prop {
                 MemberProp::Ident(ident) => {
-                    this.paths
-                        .push((ident.sym.to_string(), ident.sym.to_id(), ident.span));
+                    this.paths.push((ident.sym.to_string(), ident.span));
                 }
                 MemberProp::PrivateName(name) => {
-                    this.paths
-                        .push((name.name.to_string(), name.name.to_id(), name.span));
+                    this.paths.push((name.name.to_string(), name.span));
                 }
                 MemberProp::Computed(computed_prop_name) => {
                     if let Expr::Lit(Lit::Str(lit)) = &*computed_prop_name.expr {
-                        this.paths
-                            .push((lit.value.to_string(), lit.value.to_id(), lit.span));
+                        this.paths.push((lit.value.to_string(), lit.span));
                     }
                 }
             }
 
             match &node.obj {
                 box Expr::Ident(ident) => {
-                    this.paths
-                        .push((ident.sym.to_string(), ident.sym.to_id(), ident.span));
+                    this.paths.push((ident.sym.to_string(), ident.span));
                     is_end = true;
                     is_ident_chain = true;
                 }
@@ -308,41 +425,37 @@ impl Visit for MemberMatcher<'_> {
                     member.visit_with(this);
                 }
                 _ => {
-                    // this.with_state(MemberMatcherState::Visitor, |this| {
-                    //     node.obj.visit_mut_with(this);
-                    // });
                     is_end = true;
                     is_ident_chain = false;
                 }
             }
 
             if is_end {
-                let is_matched = if is_ident_chain {
-                    this.field.query(
-                        this.paths
-                            .iter()
-                            .map(|(v, _, _)| v)
-                            .cloned()
-                            .rev()
-                            .collect::<Vec<_>>()
-                            .join("."),
-                    )
-                } else {
-                    false
-                };
+                let match_result = is_ident_chain
+                    .then(|| {
+                        this.field.query(
+                            this.paths
+                                .iter()
+                                .map(|(v, _)| v)
+                                .cloned()
+                                .rev()
+                                .collect::<Vec<_>>()
+                                .join("."),
+                        )
+                    })
+                    .flatten();
 
-                this.matched = is_matched;
-
-                if !is_matched {
-                    let mut paths = this.paths.take();
-                    paths.pop();
-                    paths.reverse();
-                    this.ident_list.extend(paths)
-                }
+                this.process_match_result(match_result);
 
                 this.paths.clear();
             }
         });
+    }
+
+    fn visit_ident(&mut self, node: &Ident) {
+        let match_result = self.field.query(node.sym.to_string());
+
+        self.process_match_result(match_result);
     }
 }
 
@@ -355,29 +468,12 @@ mod tests {
 
     use swc_ecma_parser::{EsSyntax, Syntax};
 
-    use crate::{parse, util::resolve_module_mark, ModuleType, TransformOption};
+    use crate::{parse, util::resolve_module_mark, IgnoreWordOptions, ModuleType, TransformOption};
 
     use super::*;
 
-    #[test]
-    fn t1() -> Result<()> {
-        let mut v = parse(
-            Arc::new(
-                r#"
-__target__;
-process.env.NODE_ENV;
-process.env.NODE_ENV.aaa
-process.env;
-a.b.c.d.e.f;
-a.b.c;
-a.b.c[process.env.NODE_ENV];
-a(a.b.c).b.c;
-a.c.d
-"#
-                .to_string(),
-            ),
-            Syntax::Es(EsSyntax::default()),
-        )?;
+    fn create_collector(code: &str, options: TransformOption) -> Result<IdentCollector> {
+        let mut v = parse(Arc::new(code.to_string()), Syntax::Es(EsSyntax::default()))?;
 
         let globals = Globals::default();
 
@@ -385,15 +481,7 @@ a.c.d
 
         let context = TransformContext {
             module_type: ModuleType::Javascript,
-            options: TransformOption {
-                ignore_words: vec![
-                    "process.env.NODE_ENV".to_string(),
-                    "__target__".to_string(),
-                    "a.b.c".to_string(),
-                    "a.b".to_string(),
-                ],
-                ..Default::default()
-            },
+            options,
             globals: Arc::new(globals),
         };
 
@@ -402,6 +490,162 @@ a.c.d
 
         // let mut matcher = MemberMatcher::new(&trie);
         v.visit_with(&mut collector);
+
+        Ok(collector)
+    }
+
+    #[test]
+    fn t1() -> Result<()> {
+        let code = r#"
+__target__;
+// process.env.NODE_ENV;
+process.env.NODE_ENV.aaa
+// process.env;
+// a.b.c.d.e.f;
+// a.b.c;
+// a.b.c[process.env.NODE_ENV];
+// a(a.b.c).b.c;
+// a.c.d
+"#;
+
+        let collector = create_collector(
+            code,
+            TransformOption {
+                ignore_words: vec!["process.env.NODE_ENV".into()],
+                ..Default::default()
+            },
+        )?;
+
+        assert!(!collector.field.is_empty());
+        assert!(collector.field.contains_key("aaa"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn member_subpath() -> Result<()> {
+        let code = r#"
+a.b.c.d
+        "#;
+
+        let create_collector_with_subpath = |subpath: bool| {
+            create_collector(
+                code,
+                TransformOption {
+                    ignore_words: vec![IgnoreWord::Object(IgnoreWordOptions {
+                        path: "a.b.c".into(),
+                        subpath,
+                        ..Default::default()
+                    })],
+                    ..Default::default()
+                },
+            )
+        };
+
+        let collector = create_collector_with_subpath(true)?;
+
+        assert!(collector.field.contains_key("d"));
+        assert!(!collector.field.contains_key("c"));
+
+        let collector = create_collector_with_subpath(false)?;
+
+        assert!(!collector.field.contains_key("d"));
+        assert!(!collector.field.contains_key("c"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn member_function_call() -> Result<()> {
+        let code = r#"
+a.b.c.d("nanespace", "google");
+        "#;
+
+        let create_collector_with_subpath = |args: bool| {
+            create_collector(
+                code,
+                TransformOption {
+                    ignore_words: vec![IgnoreWord::Object(IgnoreWordOptions {
+                        path: "a.b.c".into(),
+                        skip_lit_arg: args,
+                        ..Default::default()
+                    })],
+                    ..Default::default()
+                },
+            )
+        };
+
+        let collector = create_collector_with_subpath(true)?;
+
+        assert!(!collector.skip_lits.is_empty());
+
+        let collector = create_collector_with_subpath(false)?;
+
+        assert!(collector.skip_lits.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn member_require() -> Result<()> {
+        let code = r#"
+require.async("./foo.js");
+        "#;
+
+        let create_collector_with_subpath = |args: bool| {
+            create_collector(
+                code,
+                TransformOption {
+                    ignore_words: vec![IgnoreWord::Object(IgnoreWordOptions {
+                        path: "require".into(),
+                        skip_lit_arg: args,
+                        ..Default::default()
+                    })],
+                    ..Default::default()
+                },
+            )
+        };
+
+        let collector = create_collector_with_subpath(true)?;
+
+        assert!(!collector.skip_lits.is_empty());
+
+        let collector = create_collector_with_subpath(false)?;
+
+        assert!(collector.skip_lits.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn only_require() -> Result<()> {
+        let code = r#"
+require("./foo.js");
+        "#;
+
+        let create_collector_with_subpath = |args: bool| {
+            create_collector(
+                code,
+                TransformOption {
+                    ignore_words: vec![IgnoreWord::Object(IgnoreWordOptions {
+                        path: "require".into(),
+                        skip_lit_arg: args,
+                        ..Default::default()
+                    })],
+                    ..Default::default()
+                },
+            )
+        };
+
+        let collector = create_collector_with_subpath(true)?;
+
+        assert!(!collector.skip_lits.is_empty());
+        assert!(collector.field.is_empty());
+
+        let collector = create_collector_with_subpath(false)?;
+
+        assert!(collector.skip_lits.is_empty());
+        assert!(collector.field.contains_key("./foo.js"));
 
         Ok(())
     }
