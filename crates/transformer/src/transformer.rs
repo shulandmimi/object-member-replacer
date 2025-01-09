@@ -188,19 +188,21 @@ pub fn codegen(
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", default = "Default::default")]
-pub struct IgnoreWordOptions {
+pub struct MemberMatchOption {
     pub path: String,
     pub subpath: bool,
     /// if match path, args lit will be ignore
     pub skip_lit_arg: bool,
+    pub contain: bool,
 }
 
-impl Default for IgnoreWordOptions {
+impl Default for MemberMatchOption {
     fn default() -> Self {
         Self {
             path: "".to_string(),
             subpath: true,
             skip_lit_arg: false,
+            contain: false,
         }
     }
 }
@@ -208,29 +210,36 @@ impl Default for IgnoreWordOptions {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged, rename_all = "camelCase")]
 pub enum IgnoreWord {
-    Object(IgnoreWordOptions),
+    MemberMatch(MemberMatchOption),
     Simple(String),
 }
 
 impl IgnoreWord {
     pub fn path(&self) -> &str {
         match self {
-            IgnoreWord::Object(options) => &options.path,
+            IgnoreWord::MemberMatch(options) => &options.path,
             IgnoreWord::Simple(v) => v,
         }
     }
 
     pub fn subpath(&self) -> bool {
         match self {
-            IgnoreWord::Object(options) => options.subpath,
-            IgnoreWord::Simple(_) => IgnoreWordOptions::default().subpath,
+            IgnoreWord::MemberMatch(options) => options.subpath,
+            IgnoreWord::Simple(_) => MemberMatchOption::default().subpath,
         }
     }
 
     pub fn skip_lit_arg(&self) -> bool {
         match self {
-            IgnoreWord::Object(options) => options.skip_lit_arg,
-            IgnoreWord::Simple(_) => IgnoreWordOptions::default().skip_lit_arg,
+            IgnoreWord::MemberMatch(options) => options.skip_lit_arg,
+            IgnoreWord::Simple(_) => MemberMatchOption::default().skip_lit_arg,
+        }
+    }
+
+    pub fn contain(&self) -> bool {
+        match self {
+            IgnoreWord::MemberMatch(options) => options.contain,
+            IgnoreWord::Simple(_) => MemberMatchOption::default().contain,
         }
     }
 }
@@ -434,10 +443,11 @@ mod tests {
 
         assert_result(
             TransformOption {
-                ignore_words: vec![IgnoreWord::Object(IgnoreWordOptions {
+                ignore_words: vec![IgnoreWord::MemberMatch(MemberMatchOption {
                     path: "require".to_string(),
                     subpath: true,
                     skip_lit_arg: true,
+                    ..Default::default()
                 })],
                 ..Default::default()
             },
@@ -453,10 +463,11 @@ require[a]("./foo.js");"#,
 
         assert_result(
             TransformOption {
-                ignore_words: vec![IgnoreWord::Object(IgnoreWordOptions {
+                ignore_words: vec![IgnoreWord::MemberMatch(MemberMatchOption {
                     path: "require".to_string(),
                     subpath: false,
                     skip_lit_arg: false,
+                    ..Default::default()
                 })],
                 ..Default::default()
             },
@@ -488,10 +499,11 @@ require("./foo.js");
         let result = transform(
             input.to_string(),
             TransformOption {
-                ignore_words: vec![IgnoreWord::Object(IgnoreWordOptions {
+                ignore_words: vec![IgnoreWord::MemberMatch(MemberMatchOption {
                     path: "require".to_string(),
                     subpath: false,
                     skip_lit_arg: true,
+                    ..Default::default()
                 })],
                 ..Default::default()
             },

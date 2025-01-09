@@ -8,9 +8,11 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use crate::{transformer::TransformContext, IgnoreWord};
+use crate::transformer::{IgnoreWord, MemberMatchOption, TransformContext};
 
 pub type IdentCollectorData = FxHashMap<String, (FxHashSet<Span>, usize)>;
+type ContainMemberMatch = Rc<Vec<MemberMatchOption>>;
+type IgnoreWordTrieValue = (usize, IgnoreWord);
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -23,9 +25,10 @@ pub struct IdentCollector {
     pub used_ident: FxHashSet<String>,
     pub top_level_mark: Mark,
     pub unresolved_mark: Mark,
-    trie: Trie<IgnoreWord>,
+    trie: Trie<(usize, IgnoreWord)>,
     state: MemberMatcherState,
     pending_store_arg_lits: FxHashSet<(Str, Span)>,
+    contain_member_match_list: ContainMemberMatch,
 }
 
 impl IdentCollector {
@@ -41,6 +44,7 @@ impl IdentCollector {
             state: MemberMatcherState::default(),
             skip_lits: Default::default(),
             pending_store_arg_lits: Default::default(),
+            contain_member_match_list: Default::default(),
         }
     }
 
@@ -50,14 +54,15 @@ impl IdentCollector {
             .entry(ident.to_string())
             .or_insert_with(|| (FxHashSet::default(), 0));
 
+        if self.skip_lits.contains(&span) {
+            return;
+        }
+
         spans.insert(span);
         *count += 1;
     }
 
     fn count_lit(&mut self, ident: &Str) {
-        if self.skip_lits.contains(&ident.span) {
-            return;
-        }
         self.count_str(&ident.value, ident.span);
     }
 
@@ -66,9 +71,9 @@ impl IdentCollector {
     }
 
     pub fn with_context(mut self, context: &TransformContext) -> Self {
-        for item in context.options.ignore_words.iter() {
+        for (index, item) in context.options.ignore_words.iter().enumerate() {
             self.trie
-                .insert(item.path().to_string(), Some(item.clone()));
+                .insert(item.path().to_string(), Some((index, item.clone())));
         }
 
         self
@@ -88,6 +93,7 @@ impl IdentCollector {
             is_matched: matched,
             ident_list,
             match_result,
+            skip_spans,
             ..
         } = matcher_result;
 
@@ -95,9 +101,13 @@ impl IdentCollector {
             self.count_str(&ident, span);
         }
 
+        if matched {
+            self.skip_lits.extend(skip_spans);
+        }
+
         #[allow(clippy::collapsible_match)]
         if let Some((_, options)) = match_result {
-            if let Some(ref options) = options {
+            if let Some((_, options)) = options.as_deref() {
                 if options.skip_lit_arg() {
                     self.skip_lits.extend(
                         pending_store_arg_lits
@@ -140,7 +150,8 @@ impl Visit for IdentCollector {
         let mut is_matched = false;
 
         if matches!(self.state, MemberMatcherState::Visitor) {
-            let mut matcher = MemberMatcher::new(&self.trie);
+            let mut matcher =
+                MemberMatcher::new(&self.trie, self.contain_member_match_list.clone());
 
             node.visit_with(&mut matcher);
 
@@ -193,16 +204,16 @@ impl Visit for IdentCollector {
     }
 
     fn visit_ident(&mut self, ident: &swc_ecma_ast::Ident) {
-
         if matches!(self.state, MemberMatcherState::Visitor)
             && !self.pending_store_arg_lits.is_empty()
         {
-            let mut matcher = MemberMatcher::new(&self.trie);
+            let mut matcher: MemberMatcher<'_, IgnoreWordTrieValue> =
+                MemberMatcher::new(&self.trie, self.contain_member_match_list.clone());
 
             ident.visit_with(&mut matcher);
 
             if self.process_matcher_result(matcher.take_result()) {
-                return
+                return;
             };
         }
 
@@ -320,7 +331,8 @@ impl From<Vec<String>> for Trie<String> {
 struct MemberMatcherResult {
     is_matched: bool,
     ident_list: Vec<(String, Span)>,
-    match_result: Option<(usize, Option<Rc<IgnoreWord>>)>,
+    match_result: Option<(usize, Option<Rc<IgnoreWordTrieValue>>)>,
+    skip_spans: FxHashSet<Span>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Copy)]
@@ -331,23 +343,27 @@ enum MemberMatcherState {
 }
 #[derive(Debug)]
 struct MemberMatcher<'a, T: Debug> {
-    pub field: &'a Trie<T>,
+    pub trie: &'a Trie<T>,
     pub paths: Vec<(String, Span)>,
     pub state: MemberMatcherState,
     pub ident_list: Vec<(String, Span)>,
     pub matched: bool,
-    matchd_result: Option<(usize, Option<Rc<IgnoreWord>>)>,
+    matchd_result: Option<(usize, Option<Rc<IgnoreWordTrieValue>>)>,
+    skip_spans: FxHashSet<Span>,
+    contain_member_match_list: ContainMemberMatch,
 }
 
 impl<'a, T: Debug> MemberMatcher<'a, T> {
-    fn new(trie: &'a Trie<T>) -> Self {
+    fn new(trie: &'a Trie<T>, contain_member_match_list: ContainMemberMatch) -> Self {
         Self {
-            field: trie,
+            trie,
             paths: Default::default(),
             state: Default::default(),
             ident_list: Default::default(),
             matched: false,
             matchd_result: None,
+            skip_spans: FxHashSet::default(),
+            contain_member_match_list,
         }
     }
 
@@ -370,23 +386,45 @@ impl<'a, T: Debug> MemberMatcher<'a, T> {
             is_matched: self.matched,
             ident_list: self.ident_list,
             match_result: self.matchd_result,
+            skip_spans: self.skip_spans,
         }
     }
 
-    fn process_match_result(&mut self, match_result: Option<(usize, Option<Rc<IgnoreWord>>)>) {
+    fn process_match_result(
+        &mut self,
+        match_result: Option<(usize, Option<Rc<IgnoreWordTrieValue>>)>,
+    ) {
         self.matched = match_result.is_some();
 
         if let Some((pos, options)) = match_result {
             let mut paths = self.paths.take();
 
-            if let Some(ref options) = options {
+            // let first_index = options.as_deref().map(|(index, _)| *index);
+
+            // if !self.contain_member_match_list.is_empty() {
+            //     let path_arr = paths
+            //         .iter()
+            //         .map(|item| item.0.to_string())
+            //         .collect::<Vec<_>>();
+            // }
+
+            if let Some((_, options)) = options.as_deref() {
                 let pos = paths.len().max(1) - 1 - pos;
 
                 if options.subpath() {
-                    paths.truncate(pos);
+                    let (left, right) = paths.split_at_mut(pos);
 
-                    paths.reverse();
-                    self.ident_list.extend(paths);
+                    self.skip_spans
+                        .extend(right.iter().rev().skip(1).map(|(_, span)| span));
+
+                    self.ident_list.extend(
+                        left.iter()
+                            .map(|(ident, span)| (ident.to_string(), *span))
+                            .collect::<Vec<_>>(),
+                    );
+                } else {
+                    self.skip_spans
+                        .extend(paths.into_iter().map(|(_, span)| span));
                 }
             }
 
@@ -395,7 +433,7 @@ impl<'a, T: Debug> MemberMatcher<'a, T> {
     }
 }
 
-impl Visit for MemberMatcher<'_, IgnoreWord> {
+impl Visit for MemberMatcher<'_, IgnoreWordTrieValue> {
     fn visit_member_expr(&mut self, node: &MemberExpr) {
         self.with_state(MemberMatcherState::Match, |this| {
             let mut is_end = false;
@@ -433,7 +471,7 @@ impl Visit for MemberMatcher<'_, IgnoreWord> {
             if is_end {
                 let match_result = is_ident_chain
                     .then(|| {
-                        this.field.query(
+                        this.trie.query(
                             this.paths
                                 .iter()
                                 .map(|(v, _)| v)
@@ -453,7 +491,8 @@ impl Visit for MemberMatcher<'_, IgnoreWord> {
     }
 
     fn visit_ident(&mut self, node: &Ident) {
-        let match_result = self.field.query(node.sym.to_string());
+        self.paths.push((node.sym.to_string(), node.span));
+        let match_result = self.trie.query(node.sym.to_string());
 
         self.process_match_result(match_result);
     }
@@ -468,7 +507,7 @@ mod tests {
 
     use swc_ecma_parser::{EsSyntax, Syntax};
 
-    use crate::{parse, util::resolve_module_mark, IgnoreWordOptions, ModuleType, TransformOption};
+    use crate::{parse, util::resolve_module_mark, MemberMatchOption, ModuleType, TransformOption};
 
     use super::*;
 
@@ -532,7 +571,7 @@ a.b.c.d
             create_collector(
                 code,
                 TransformOption {
-                    ignore_words: vec![IgnoreWord::Object(IgnoreWordOptions {
+                    ignore_words: vec![IgnoreWord::MemberMatch(MemberMatchOption {
                         path: "a.b.c".into(),
                         subpath,
                         ..Default::default()
@@ -558,16 +597,17 @@ a.b.c.d
     #[test]
     fn member_function_call() -> Result<()> {
         let code = r#"
-a.b.c.d("nanespace", "google");
+a.b.c.d("namespace", "google");
         "#;
 
-        let create_collector_with_subpath = |args: bool| {
+        let skip_lit_arg = |args: bool| {
             create_collector(
                 code,
                 TransformOption {
-                    ignore_words: vec![IgnoreWord::Object(IgnoreWordOptions {
+                    ignore_words: vec![IgnoreWord::MemberMatch(MemberMatchOption {
                         path: "a.b.c".into(),
                         skip_lit_arg: args,
+                        subpath: true,
                         ..Default::default()
                     })],
                     ..Default::default()
@@ -575,13 +615,17 @@ a.b.c.d("nanespace", "google");
             )
         };
 
-        let collector = create_collector_with_subpath(true)?;
+        let collector = skip_lit_arg(true)?;
 
         assert!(!collector.skip_lits.is_empty());
+        assert!(collector.field.contains_key("d"));
+        assert!(!collector.field.contains_key("namespace"));
 
-        let collector = create_collector_with_subpath(false)?;
+        let collector = skip_lit_arg(false)?;
 
-        assert!(collector.skip_lits.is_empty());
+        assert!(!collector.skip_lits.is_empty());
+        assert!(collector.field.contains_key("namespace"));
+        assert!(collector.field.contains_key("google"));
 
         Ok(())
     }
@@ -592,13 +636,13 @@ a.b.c.d("nanespace", "google");
 require.async("./foo.js");
         "#;
 
-        let create_collector_with_subpath = |args: bool| {
+        let create_collector_with_subpath = |subpath: bool| {
             create_collector(
                 code,
                 TransformOption {
-                    ignore_words: vec![IgnoreWord::Object(IgnoreWordOptions {
+                    ignore_words: vec![IgnoreWord::MemberMatch(MemberMatchOption {
                         path: "require".into(),
-                        skip_lit_arg: args,
+                        subpath,
                         ..Default::default()
                     })],
                     ..Default::default()
@@ -608,11 +652,15 @@ require.async("./foo.js");
 
         let collector = create_collector_with_subpath(true)?;
 
-        assert!(!collector.skip_lits.is_empty());
+        assert!(collector.skip_lits.is_empty());
+        assert!(collector.field.contains_key("./foo.js"));
+        assert!(collector.field.contains_key("async"));
 
         let collector = create_collector_with_subpath(false)?;
 
-        assert!(collector.skip_lits.is_empty());
+        assert!(!collector.skip_lits.is_empty());
+        assert!(collector.field.contains_key("./foo.js"));
+        assert!(!collector.field.contains_key("async"));
 
         Ok(())
     }
@@ -623,11 +671,11 @@ require.async("./foo.js");
 require("./foo.js");
         "#;
 
-        let create_collector_with_subpath = |args: bool| {
+        let create_collector_with_skip_lit_arg = |args: bool| {
             create_collector(
                 code,
                 TransformOption {
-                    ignore_words: vec![IgnoreWord::Object(IgnoreWordOptions {
+                    ignore_words: vec![IgnoreWord::MemberMatch(MemberMatchOption {
                         path: "require".into(),
                         skip_lit_arg: args,
                         ..Default::default()
@@ -637,12 +685,12 @@ require("./foo.js");
             )
         };
 
-        let collector = create_collector_with_subpath(true)?;
+        let collector = create_collector_with_skip_lit_arg(true)?;
 
         assert!(!collector.skip_lits.is_empty());
         assert!(collector.field.is_empty());
 
-        let collector = create_collector_with_subpath(false)?;
+        let collector = create_collector_with_skip_lit_arg(false)?;
 
         assert!(collector.skip_lits.is_empty());
         assert!(collector.field.contains_key("./foo.js"));
