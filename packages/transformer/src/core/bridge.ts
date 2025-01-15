@@ -1,14 +1,32 @@
 import { transform as t } from "../binding";
 import { ModuleType } from "../type";
 
+export interface IgnoreWordObject {
+    /**
+     * The path of the word to ignore.
+     *
+     * link `require.async()` => `"require"`
+     */
+    path: string;
+    /**
+     * Whether to ignore the subpath of the word.
+     */
+    subpath: boolean,
+    /**
+     * Whether to ignore the literal argument of the word.
+     */
+    skipLitArg: boolean,
+}
+
+export type IgnoreWord = string | IgnoreWordObject;
+
 export interface TransformOption {
     filename?: string;
     sourceMap?: string;
     enableSourceMap?: boolean;
     moduleType?: ModuleType;
-    ignoreWords?: string[];
+    ignoreWords?: IgnoreWord[];
     preserveKeywords?: string[];
-    stringLiteral?: boolean
 }
 
 export interface TransformResult {

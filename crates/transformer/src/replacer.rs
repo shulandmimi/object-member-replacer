@@ -1,4 +1,5 @@
 use rustc_hash::{FxHashMap, FxHashSet};
+use swc_common::Span;
 use swc_ecma_ast::{
     ComputedPropName, Expr, Ident, KeyValueProp, Lit, MemberExpr, MemberProp, Prop, PropName,
     PropOrSpread,
@@ -11,24 +12,23 @@ use crate::transformer::TransformContext;
 
 #[derive(Debug)]
 pub struct IdentReplacer {
-    pub should_replace_ident_list: FxHashSet<String>,
+    pub should_replace_ident_list: FxHashMap<String, FxHashSet<Span>>,
     pub ident_map: FxHashMap<String, String>,
     pub allocator: TokenAllocator,
-    pub string_literal_enable: bool,
+    skip_lits: FxHashSet<Span>
 }
 
 impl IdentReplacer {
-    pub fn new(set: FxHashSet<String>) -> Self {
+    pub fn new(set: FxHashMap<String, FxHashSet<Span>>, skip_lits: FxHashSet<Span>) -> Self {
         Self {
             should_replace_ident_list: set,
             allocator: TokenAllocator::new(),
             ident_map: FxHashMap::default(),
-            string_literal_enable: true,
+            skip_lits,
         }
     }
 
     pub fn with_context(mut self, context: &TransformContext) -> Self {
-        self.string_literal_enable = context.options.string_literal;
         self.extend_used_ident(context.options.preserve_keywords.iter().cloned().collect());
         self
     }
@@ -37,8 +37,14 @@ impl IdentReplacer {
         self.allocator.extends(set);
     }
 
-    pub fn contain(&self, ident: &str) -> bool {
-        self.should_replace_ident_list.contains(ident)
+    pub fn contain(&self, ident: &str, span: Span) -> bool {
+        if self.skip_lits.contains(&span) {
+            return false;
+        }
+
+        self.should_replace_ident_list
+            .get(ident)
+            .is_some_and(|spans| spans.contains(&span))
     }
 
     pub fn alloc_ident(&mut self, ident: &str) -> String {
@@ -51,12 +57,6 @@ impl IdentReplacer {
         self.ident_map.insert(ident.to_string(), s.clone());
 
         s
-    }
-}
-
-impl From<FxHashMap<String, usize>> for IdentReplacer {
-    fn from(value: FxHashMap<String, usize>) -> Self {
-        Self::new(value.into_keys().collect())
     }
 }
 
@@ -82,7 +82,7 @@ impl IdentReplacer {
     fn replace_computed(&mut self, computed_props_name: &mut ComputedPropName) -> bool {
         if let Expr::Lit(Lit::Str(lit)) = &*computed_props_name.expr {
             let v = lit.value.as_str();
-            if self.contain(v) {
+            if self.contain(v, lit.span) {
                 *computed_props_name = self.create_computed_prop_name(v);
                 return true;
             }
@@ -94,11 +94,18 @@ impl IdentReplacer {
 
 impl VisitMut for IdentReplacer {
     fn visit_mut_member_expr(&mut self, node: &mut MemberExpr) {
+        match &mut node.obj {
+            box Expr::Ident(_) => {}
+            _ => {
+                node.obj.visit_mut_with(self);
+            }
+        }
+
         let mut is_replaced = false;
         match &mut node.prop {
             MemberProp::Ident(ident) => {
                 let v = ident.sym.as_str();
-                if self.contain(v) {
+                if self.contain(v, ident.span) {
                     node.prop = MemberProp::Computed(self.create_computed_prop_name(v));
                     is_replaced = true;
                 }
@@ -121,7 +128,7 @@ impl VisitMut for IdentReplacer {
             PropOrSpread::Prop(box prop) => match prop {
                 Prop::Shorthand(v) => {
                     let name = v.sym.as_str();
-                    if self.contain(name) {
+                    if self.contain(name, v.span) {
                         *prop = Prop::KeyValue(KeyValueProp {
                             key: PropName::Computed(self.create_computed_prop_name(name)),
                             value: Box::new(Expr::Ident(v.clone())),
@@ -131,7 +138,7 @@ impl VisitMut for IdentReplacer {
                 Prop::KeyValue(v) => {
                     if let PropName::Ident(ident) = &v.key {
                         let name = ident.sym.as_str();
-                        if self.contain(name) {
+                        if self.contain(name, ident.span) {
                             v.key = PropName::Computed(self.create_computed_prop_name(name));
                         }
                     }
@@ -140,7 +147,7 @@ impl VisitMut for IdentReplacer {
                 Prop::Method(v) => {
                     if let PropName::Ident(ident) = &v.key {
                         let name = ident.sym.as_str();
-                        if self.contain(name) {
+                        if self.contain(name, ident.span) {
                             v.key = PropName::Computed(self.create_computed_prop_name(name));
                         }
                     }
@@ -154,9 +161,9 @@ impl VisitMut for IdentReplacer {
     }
 
     fn visit_mut_expr(&mut self, node: &mut Expr) {
-        if self.string_literal_enable && let Expr::Lit(Lit::Str(lit)) = node {
+        if let Expr::Lit(Lit::Str(lit)) = node {
             let v = lit.value.as_str();
-            if self.contain(v) {
+            if self.contain(v, lit.span) {
                 *node = Expr::Ident(self.create_ident(v));
             }
         }

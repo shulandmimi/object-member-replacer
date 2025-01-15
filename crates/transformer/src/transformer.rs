@@ -7,6 +7,7 @@ use std::{
 use enhanced_magic_string::collapse_sourcemap::CollapseSourcemapOptions;
 use itertools::Itertools;
 use omm_core::filter_cannot_compress_ident;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use swc_common::{BytePos, FileName, Globals, LineCol, SourceMap};
 use swc_ecma_ast::{
@@ -108,20 +109,40 @@ pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
     module.visit_with(&mut collector);
 
     let IdentCollector {
-        field,
+        mut field,
         used_ident,
+        skip_lits,
         ..
     } = collector;
 
+    let filterable_map = field
+        .iter()
+        .map(|(ident, (_, count))| (ident.clone(), *count))
+        .collect::<FxHashMap<_, _>>();
+
     // filter does not have to be replaced
-    let map = filter_cannot_compress_ident(field);
+    let map = filter_cannot_compress_ident(filterable_map);
 
     if map.is_empty() {
         return;
     }
 
+    let keys = field.keys().cloned().collect::<Vec<_>>();
+    for key in keys {
+        if !map.contains_key(&key) {
+            field.remove(&key);
+        }
+    }
+
     // replace ident
-    let mut replacer = IdentReplacer::new(map.into_keys().collect()).with_context(context);
+    let mut replacer = IdentReplacer::new(
+        field
+            .into_iter()
+            .map(|(k, (spans, _))| (k, spans))
+            .collect(),
+        skip_lits,
+    )
+    .with_context(context);
 
     replacer.extend_used_ident(used_ident);
     module.visit_mut_with(&mut replacer);
@@ -165,37 +186,98 @@ pub fn codegen(
     Ok(buf)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase", default = "Default::default")]
+pub struct MemberMatchOption {
+    pub path: String,
+    pub subpath: bool,
+    /// if match path, args lit will be ignore
+    pub skip_lit_arg: bool,
+    pub contain: bool,
+}
+
+impl Default for MemberMatchOption {
+    fn default() -> Self {
+        Self {
+            path: "".to_string(),
+            subpath: true,
+            skip_lit_arg: false,
+            contain: false,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged, rename_all = "camelCase")]
+pub enum IgnoreWord {
+    MemberMatch(MemberMatchOption),
+    Simple(String),
+}
+
+impl IgnoreWord {
+    pub fn path(&self) -> &str {
+        match self {
+            IgnoreWord::MemberMatch(options) => &options.path,
+            IgnoreWord::Simple(v) => v,
+        }
+    }
+
+    pub fn subpath(&self) -> bool {
+        match self {
+            IgnoreWord::MemberMatch(options) => options.subpath,
+            IgnoreWord::Simple(_) => MemberMatchOption::default().subpath,
+        }
+    }
+
+    pub fn skip_lit_arg(&self) -> bool {
+        match self {
+            IgnoreWord::MemberMatch(options) => options.skip_lit_arg,
+            IgnoreWord::Simple(_) => MemberMatchOption::default().skip_lit_arg,
+        }
+    }
+
+    pub fn contain(&self) -> bool {
+        match self {
+            IgnoreWord::MemberMatch(options) => options.contain,
+            IgnoreWord::Simple(_) => MemberMatchOption::default().contain,
+        }
+    }
+}
+
+impl<T: AsRef<str>> From<T> for IgnoreWord {
+    fn from(value: T) -> Self {
+        IgnoreWord::Simple(value.as_ref().to_string())
+    }
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransformOption {
-    filename: Option<String>,
-    source_map: Option<String>,
+    pub filename: Option<String>,
+    pub source_map: Option<String>,
     #[serde(default)]
-    enable_source_map: bool,
-    module_type: Option<ModuleType>,
+    pub enable_source_map: bool,
+    pub module_type: Option<ModuleType>,
     #[serde(default)]
     pub(crate) preserve_keywords: Vec<String>,
 
     // TODO: support ignore object and object ident
     #[serde(default)]
-    pub(crate) ignore_words: Vec<String>,
-    #[serde(default)]
-    pub(crate) string_literal: bool,
+    pub(crate) ignore_words: Vec<IgnoreWord>,
 }
 
-impl Default for TransformOption {
-    fn default() -> Self {
-        Self {
-            filename: None,
-            source_map: None,
-            enable_source_map: false,
-            module_type: None,
-            preserve_keywords: vec![],
-            ignore_words: vec![],
-            string_literal: true,
-        }
-    }
-}
+// impl Default for TransformOption {
+//     fn default() -> Self {
+//         Self {
+//             filename: None,
+//             source_map: None,
+//             enable_source_map: false,
+//             module_type: None,
+//             preserve_keywords: vec![],
+//             ignore_words: vec![],
+//         }
+//     }
+// }
 
 impl TransformOption {
     fn filename(&self) -> String {
@@ -212,9 +294,9 @@ pub struct TransformResult {
 
 #[allow(dead_code)]
 pub struct TransformContext {
-    module_type: ModuleType,
+    pub module_type: ModuleType,
     pub options: TransformOption,
-    globals: Arc<Globals>,
+    pub globals: Arc<Globals>,
 }
 
 #[allow(clippy::declare_interior_mutable_const)]
@@ -335,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    fn require_fileds() -> Result<()> {
+    fn require_fields() -> Result<()> {
         fn create_result(options: TransformOption) -> Result<TransformResult> {
             transform(
                 r#"
@@ -354,26 +436,21 @@ mod tests {
 
         fn assert_result(options: TransformOption, snapshot: &str) -> Result<()> {
             let result = create_result(options)?;
+
             assert_eq!(result.content.trim(), snapshot.trim());
             Ok(())
         }
 
-        fn string_literal_disable() -> TransformOption {
-            TransformOption {
-                string_literal: false,
-                ..Default::default()
-            }
-        }
-
-        fn disable_require_filed() -> TransformOption {
-            TransformOption {
-                ignore_words: vec!["require".to_string()],
-                ..Default::default()
-            }
-        }
-
         assert_result(
-            string_literal_disable(),
+            TransformOption {
+                ignore_words: vec![IgnoreWord::MemberMatch(MemberMatchOption {
+                    path: "require".to_string(),
+                    subpath: true,
+                    skip_lit_arg: true,
+                    ..Default::default()
+                })],
+                ..Default::default()
+            },
             r#"var a = "async";
 require[a]("./foo.js");
 require[a]("./foo.js");
@@ -385,7 +462,15 @@ require[a]("./foo.js");"#,
         )?;
 
         assert_result(
-            disable_require_filed(),
+            TransformOption {
+                ignore_words: vec![IgnoreWord::MemberMatch(MemberMatchOption {
+                    path: "require".to_string(),
+                    subpath: false,
+                    skip_lit_arg: false,
+                    ..Default::default()
+                })],
+                ..Default::default()
+            },
             r#"var a = "./foo.js";
 require.async(a);
 require.async(a);
@@ -414,7 +499,12 @@ require("./foo.js");
         let result = transform(
             input.to_string(),
             TransformOption {
-                string_literal: false,
+                ignore_words: vec![IgnoreWord::MemberMatch(MemberMatchOption {
+                    path: "require".to_string(),
+                    subpath: false,
+                    skip_lit_arg: true,
+                    ..Default::default()
+                })],
                 ..Default::default()
             },
         )?;
