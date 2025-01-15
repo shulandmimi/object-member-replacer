@@ -17,9 +17,12 @@ module.exports = {
     optimization: {
         minimizer: [
             new OOMPlugin({
-                ignoreWords: ["process.env.GOGOGO", "require", "require.async"],
+                ignoreWords: [
+                    "process.env.GOGOGO",
+                    { path: "_require", subpath: false, skipLitArg: true },
+                ],
             }),
-            new TerserPlugin(),
+            // new TerserPlugin(),
         ],
         splitChunks: {
             cacheGroups: {

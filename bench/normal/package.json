@@ -1,0 +1,21 @@
+{
+  "name": "normal",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "farmup -w",
+    "bench": "farmup"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@farmfe/cli": "^1.0.4",
+    "@farmfe/core": "^1.6.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5"
+  }
+}
