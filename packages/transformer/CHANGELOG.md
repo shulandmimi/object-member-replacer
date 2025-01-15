@@ -1,5 +1,11 @@
 # @oomm/transformer
 
+## 0.0.17
+
+### Patch Changes
+
+- 514ce7f: support member matcher, and ignore it or call args
+
 ## 0.0.16
 
 ### Patch Changes
