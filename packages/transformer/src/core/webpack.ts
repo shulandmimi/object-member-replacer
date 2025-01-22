@@ -13,8 +13,6 @@ export const loader: LoaderDefinitionFunction = function (content) {
 
 interface Output {
     name: string;
-    code: string;
-    map: any;
     source?: any;
 }
 
@@ -34,7 +32,6 @@ export class OOMPlugin {
                 },
                 async (assets) => {
                     const cache = compilation.getCache(PLUGIN_NAME);
-
                     const assetsShouldMinify = await Promise.all(
                         Object.keys(assets).map(async (name) => {
                             const { source, info } =
@@ -71,10 +68,10 @@ export class OOMPlugin {
                             const { source, map } = inputSource.sourceAndMap();
                             let inputCode = source.toString();
 
-                            let inputMap;
+                            let formatSourceMap;
 
                             if (map) {
-                                inputMap =
+                                formatSourceMap =
                                     typeof map === "object" && map !== null
                                         ? JSON.stringify(map)
                                         : map;
@@ -89,35 +86,36 @@ export class OOMPlugin {
                             const options: TransformOption = {
                                 moduleType,
                                 filename: name,
-                                sourceMap: inputMap,
+                                sourceMap: formatSourceMap,
                                 ...this.options,
                             };
 
                             const result = await transform(inputCode, options);
 
+                            const code = result.code ?? inputCode;
+                            const outputMap = result.map ?? map;
+
                             output = {
                                 name,
-                                code: result.code ?? inputCode,
-                                map: result.map ?? map,
                             };
 
-                            if (output.map) {
+                            if (outputMap) {
                                 output.source = new SourceMapSource(
-                                    output.code,
+                                    code,
                                     name,
-                                    output.map,
+                                    outputMap,
                                     inputCode,
-                                    inputMap,
+                                    formatSourceMap,
                                     true
                                 );
                             } else {
-                                output.source = new RawSource(output.code);
+                                output.source = new RawSource(code);
                             }
 
                             await cacheSource.storePromise({
-                                source: output.source,
                                 errors: [],
                                 warning: [],
+                                ...output,
                             });
                         }
 

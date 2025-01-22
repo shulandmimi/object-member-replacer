@@ -15,7 +15,7 @@ pub struct IdentReplacer {
     pub should_replace_ident_list: FxHashMap<String, FxHashSet<Span>>,
     pub ident_map: FxHashMap<String, String>,
     pub allocator: TokenAllocator,
-    skip_lits: FxHashSet<Span>
+    skip_lits: FxHashSet<Span>,
 }
 
 impl IdentReplacer {

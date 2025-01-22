@@ -11,14 +11,18 @@ export interface IgnoreWordObject {
     /**
      * Whether to ignore the subpath of the word.
      */
-    subpath: boolean,
+    subpath: boolean;
     /**
      * Whether to ignore the literal argument of the word.
      */
-    skipLitArg: boolean,
+    skipLitArg: boolean;
 }
 
-export type IgnoreWord = string | IgnoreWordObject;
+export interface StringLitOption {
+    content: string;
+}
+
+export type IgnoreWord = string | IgnoreWordObject | StringLitOption;
 
 export interface TransformOption {
     filename?: string;

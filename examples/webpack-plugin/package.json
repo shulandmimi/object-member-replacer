@@ -11,7 +11,8 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "@oomm/transformer": "workspace:^"
+    "@oomm/transformer": "workspace:^",
+    "@types/node": "^22.10.5"
   },
   "dependencies": {
     "terser-webpack-plugin": "^5.3.11"
