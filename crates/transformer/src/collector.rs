@@ -244,6 +244,31 @@ impl Visit for IdentCollector {
             lit.visit_children_with(self);
         }
     }
+
+    fn visit_prop_name(&mut self, prop_name: &PropName) {
+        match prop_name {
+            PropName::Ident(ident) => {
+                self.count_ident_name(ident);
+            }
+            PropName::Str(str) => {
+                self.count_lit(str);
+            }
+            _ => {
+                prop_name.visit_children_with(self);
+            }
+        }
+    }
+
+    fn visit_prop(&mut self, node: &Prop) {
+        match node {
+            Prop::Shorthand(ident) => {
+                self.count_ident(ident);
+            }
+            _ => {
+                node.visit_children_with(self);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Default)]
