@@ -32,9 +32,12 @@ module.exports = {
             new OOMPlugin({
                 ignoreWords: [
                     "process.env.GOGOGO",
-                    { content: "use strict" },
-                    { path: "_require", subpath: false, skipLitArg: true },
+                    { type: 'stringLit', content: "use strict" },
+                    { type: 'member', path: "_require", subpath: false, skipLitArg: true },
                 ],
+                exclude: [
+                    'exclude'
+                ]
             }),
             // new TerserPlugin(),
         ],
@@ -45,7 +48,7 @@ module.exports = {
                         ...acc,
                         [item.name]: {
                             ...item,
-                            chunks·: "all",
+                            chunks: "all",
                             minSize: 0,
                         },
                     }),

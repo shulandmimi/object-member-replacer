@@ -2,6 +2,7 @@ import { transform as t } from "../binding";
 import { ModuleType } from "../type";
 
 export interface IgnoreWordObject {
+    type: "member";
     /**
      * The path of the word to ignore.
      *
@@ -9,16 +10,27 @@ export interface IgnoreWordObject {
      */
     path: string;
     /**
-     * Whether to ignore the subpath of the word.
+     *
+     * `require.async`
+     *
+     * ignore the subpath of the word. eg. `async`
+     *
+     * @default true
      */
     subpath: boolean;
     /**
-     * Whether to ignore the literal argument of the word.
+     *
+     * `require.async("namespace")`
+     *
+     * ignore the literal argument of the word. eg. `"namespace"`
+     *
+     * @default false
      */
     skipLitArg: boolean;
 }
 
 export interface StringLitOption {
+    type: "stringLit";
     content: string;
 }
 

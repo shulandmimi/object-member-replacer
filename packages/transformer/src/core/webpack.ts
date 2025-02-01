@@ -1,6 +1,6 @@
 import type { Compiler, LoaderDefinitionFunction } from "webpack";
 import { transform, type TransformOption } from "./bridge";
-import { moduleTypeFromName } from "../util/module";
+import { createFilter, moduleTypeFromName } from "../util/module";
 import { OOMPluginOptions } from "../type";
 
 export const loader: LoaderDefinitionFunction = function (content) {
@@ -19,6 +19,7 @@ interface Output {
 const PLUGIN_NAME = "OOMPlugin";
 
 export class OOMPlugin {
+    filter?: ReturnType<typeof createFilter>;
     constructor(private options: OOMPluginOptions = {}) {}
 
     apply(compiler: Compiler) {
@@ -62,7 +63,16 @@ export class OOMPlugin {
                             source: inputSource,
                             cacheSource,
                         } = asset;
+
                         let output: Output = asset.output;
+
+                        const filter = (this.filter ??= createFilter(
+                            this.options
+                        ));
+
+                        if (!filter(name)) {
+                            continue;
+                        }
 
                         if (!output) {
                             const { source, map } = inputSource.sourceAndMap();
@@ -83,11 +93,18 @@ export class OOMPlugin {
                                 continue;
                             }
 
+                            const {
+                                enableSourceMap,
+                                ignoreWords,
+                                preserveKeywords,
+                            } = this.options;
                             const options: TransformOption = {
                                 moduleType,
                                 filename: name,
                                 sourceMap: formatSourceMap,
-                                ...this.options,
+                                enableSourceMap,
+                                ignoreWords,
+                                preserveKeywords,
                             };
 
                             const result = await transform(inputCode, options);

@@ -1,7 +1,6 @@
 {
   "name": "@oomm/transformer",
   "version": "0.0.17",
-  "types": "index.d.ts",
   "napi": {
     "name": "transformer",
     "triples": {

@@ -214,10 +214,13 @@ pub struct StringLitOptions {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(untagged, rename_all = "camelCase")]
+#[serde(tag = "type")]
 pub enum IgnoreWord {
+    #[serde(rename = "stringLit")]
     StringLit(StringLitOptions),
+    #[serde(rename = "member")]
     MemberMatch(MemberMatchOption),
+    #[serde(untagged)]
     Simple(String),
 }
 
@@ -242,14 +245,6 @@ impl IgnoreWord {
         match self {
             IgnoreWord::MemberMatch(options) => options.skip_lit_arg,
             IgnoreWord::Simple(_) => MemberMatchOption::default().skip_lit_arg,
-            IgnoreWord::StringLit(_) => false,
-        }
-    }
-
-    pub fn contain(&self) -> bool {
-        match self {
-            IgnoreWord::MemberMatch(options) => options.contain,
-            IgnoreWord::Simple(_) => MemberMatchOption::default().contain,
             IgnoreWord::StringLit(_) => false,
         }
     }
