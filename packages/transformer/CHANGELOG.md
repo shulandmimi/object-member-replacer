@@ -1,5 +1,11 @@
 # @oomm/transformer
 
+## 0.0.18
+
+### Patch Changes
+
+- 7e7549d: support object lit
+
 ## 0.0.17
 
 ### Patch Changes
