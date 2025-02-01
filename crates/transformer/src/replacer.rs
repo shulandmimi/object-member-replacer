@@ -15,7 +15,7 @@ pub struct IdentReplacer {
     pub should_replace_ident_list: FxHashMap<String, FxHashSet<Span>>,
     pub ident_map: FxHashMap<String, String>,
     pub allocator: TokenAllocator,
-    skip_lits: FxHashSet<Span>
+    skip_lits: FxHashSet<Span>,
 }
 
 impl IdentReplacer {
@@ -169,5 +169,56 @@ impl VisitMut for IdentReplacer {
         }
 
         node.visit_mut_children_with(self);
+    }
+
+    fn visit_mut_prop_name(&mut self, node: &mut PropName) {
+        let mut is_replaced = false;
+        match node {
+            PropName::Ident(ident) => {
+                let v = ident.sym.as_str();
+                if self.contain(v, ident.span) {
+                    *node = PropName::Computed(self.create_computed_prop_name(v));
+                    is_replaced = true;
+                }
+            }
+            PropName::Str(str) => {
+                let v = str.value.as_str();
+                if self.contain(v, str.span) {
+                    *node = PropName::Computed(self.create_computed_prop_name(v));
+                    is_replaced = true;
+                }
+            }
+            PropName::Computed(computed_prop_name) => {
+                is_replaced = self.replace_computed(computed_prop_name);
+            }
+            _ => {}
+        }
+
+        if !is_replaced {
+            node.visit_mut_children_with(self);
+        }
+    }
+
+    fn visit_mut_prop(&mut self, node: &mut Prop) {
+        let mut is_replaced = false;
+        match node {
+            Prop::Shorthand(ident) => {
+                let name = ident.sym.as_str();
+                if self.contain(name, ident.span) {
+                    *node = Prop::KeyValue(KeyValueProp {
+                        key: PropName::Computed(self.create_computed_prop_name(name)),
+                        value: Box::new(Expr::Ident(ident.clone())),
+                    });
+                    is_replaced = true;
+                }
+            }
+            _ => {
+                node.visit_mut_children_with(self);
+            }
+        }
+
+        if !is_replaced {
+            node.visit_mut_children_with(self);
+        }
     }
 }

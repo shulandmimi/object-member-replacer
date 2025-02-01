@@ -1,6 +1,6 @@
 import type { Compiler, LoaderDefinitionFunction } from "webpack";
 import { transform, type TransformOption } from "./bridge";
-import { moduleTypeFromName } from "../util/module";
+import { createFilter, moduleTypeFromName } from "../util/module";
 import { OOMPluginOptions } from "../type";
 
 export const loader: LoaderDefinitionFunction = function (content) {
@@ -13,14 +13,13 @@ export const loader: LoaderDefinitionFunction = function (content) {
 
 interface Output {
     name: string;
-    code: string;
-    map: any;
     source?: any;
 }
 
 const PLUGIN_NAME = "OOMPlugin";
 
 export class OOMPlugin {
+    filter?: ReturnType<typeof createFilter>;
     constructor(private options: OOMPluginOptions = {}) {}
 
     apply(compiler: Compiler) {
@@ -34,7 +33,6 @@ export class OOMPlugin {
                 },
                 async (assets) => {
                     const cache = compilation.getCache(PLUGIN_NAME);
-
                     const assetsShouldMinify = await Promise.all(
                         Object.keys(assets).map(async (name) => {
                             const { source, info } =
@@ -65,16 +63,25 @@ export class OOMPlugin {
                             source: inputSource,
                             cacheSource,
                         } = asset;
+
                         let output: Output = asset.output;
+
+                        const filter = (this.filter ??= createFilter(
+                            this.options
+                        ));
+
+                        if (!filter(name)) {
+                            continue;
+                        }
 
                         if (!output) {
                             const { source, map } = inputSource.sourceAndMap();
                             let inputCode = source.toString();
 
-                            let inputMap;
+                            let formatSourceMap;
 
                             if (map) {
-                                inputMap =
+                                formatSourceMap =
                                     typeof map === "object" && map !== null
                                         ? JSON.stringify(map)
                                         : map;
@@ -86,38 +93,46 @@ export class OOMPlugin {
                                 continue;
                             }
 
+                            const {
+                                enableSourceMap,
+                                ignoreWords,
+                                preserveKeywords,
+                            } = this.options;
                             const options: TransformOption = {
                                 moduleType,
                                 filename: name,
-                                sourceMap: inputMap,
-                                ...this.options,
+                                sourceMap: formatSourceMap,
+                                enableSourceMap,
+                                ignoreWords,
+                                preserveKeywords,
                             };
 
                             const result = await transform(inputCode, options);
 
+                            const code = result.code ?? inputCode;
+                            const outputMap = result.map ?? map;
+
                             output = {
                                 name,
-                                code: result.code ?? inputCode,
-                                map: result.map ?? map,
                             };
 
-                            if (output.map) {
+                            if (outputMap) {
                                 output.source = new SourceMapSource(
-                                    output.code,
+                                    code,
                                     name,
-                                    output.map,
+                                    outputMap,
                                     inputCode,
-                                    inputMap,
+                                    formatSourceMap,
                                     true
                                 );
                             } else {
-                                output.source = new RawSource(output.code);
+                                output.source = new RawSource(code);
                             }
 
                             await cacheSource.storePromise({
-                                source: output.source,
                                 errors: [],
                                 warning: [],
+                                ...output,
                             });
                         }
 

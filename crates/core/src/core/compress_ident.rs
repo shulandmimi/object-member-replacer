@@ -61,12 +61,20 @@ impl CostCalculator for HostingVariable {
 }
 
 pub fn filter_cannot_compress_ident(map: FxHashMap<String, usize>) -> FxHashMap<String, usize> {
-    let mut v = map
+    let (v1, mut v): (Vec<_>, Vec<_>) = map
         .into_iter()
         .filter(|(i, c)| *c > 1 && i.len() > 2)
         .sorted_by_key(|(_, c)| Reverse(*c))
         .sorted_by_key(|(v, _)| Reverse(v.len()))
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>()
+        .into_iter()
+        .partition(|(ident, count)| {
+            VAR_HOSTING.should_compress(
+                constant::COMPRESS_CHARACTER_WIDTH as usize,
+                ident.len(),
+                *count,
+            )
+        });
 
     let mut end = v.len();
 
@@ -85,7 +93,7 @@ pub fn filter_cannot_compress_ident(map: FxHashMap<String, usize>) -> FxHashMap<
         v.truncate(end);
     };
 
-    v.into_iter().collect()
+    [v1, v].concat().into_iter().collect()
 }
 
 #[cfg(test)]

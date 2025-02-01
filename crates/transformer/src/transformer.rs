@@ -208,17 +208,28 @@ impl Default for MemberMatchOption {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(untagged, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
+pub struct StringLitOptions {
+    pub content: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type")]
 pub enum IgnoreWord {
+    #[serde(rename = "stringLit")]
+    StringLit(StringLitOptions),
+    #[serde(rename = "member")]
     MemberMatch(MemberMatchOption),
+    #[serde(untagged)]
     Simple(String),
 }
 
 impl IgnoreWord {
-    pub fn path(&self) -> &str {
+    pub fn path(&self) -> Option<&str> {
         match self {
-            IgnoreWord::MemberMatch(options) => &options.path,
-            IgnoreWord::Simple(v) => v,
+            IgnoreWord::MemberMatch(options) => Some(&options.path),
+            IgnoreWord::Simple(v) => Some(v),
+            IgnoreWord::StringLit(_) => None,
         }
     }
 
@@ -226,6 +237,7 @@ impl IgnoreWord {
         match self {
             IgnoreWord::MemberMatch(options) => options.subpath,
             IgnoreWord::Simple(_) => MemberMatchOption::default().subpath,
+            IgnoreWord::StringLit(_) => false,
         }
     }
 
@@ -233,13 +245,7 @@ impl IgnoreWord {
         match self {
             IgnoreWord::MemberMatch(options) => options.skip_lit_arg,
             IgnoreWord::Simple(_) => MemberMatchOption::default().skip_lit_arg,
-        }
-    }
-
-    pub fn contain(&self) -> bool {
-        match self {
-            IgnoreWord::MemberMatch(options) => options.contain,
-            IgnoreWord::Simple(_) => MemberMatchOption::default().contain,
+            IgnoreWord::StringLit(_) => false,
         }
     }
 }

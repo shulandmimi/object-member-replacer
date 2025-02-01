@@ -4,11 +4,12 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use swc_common::{util::take::Take, Mark, Span};
 use swc_ecma_ast::{
-    CallExpr, Callee, Expr, ExprOrSpread, Ident, IdentName, Lit, MemberExpr, MemberProp, Str,
+    CallExpr, Callee, Expr, ExprOrSpread, Ident, IdentName, Lit, MemberExpr, MemberProp, Prop,
+    PropName, Str,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use crate::transformer::{IgnoreWord, MemberMatchOption, TransformContext};
+use crate::transformer::{IgnoreWord, MemberMatchOption, StringLitOptions, TransformContext};
 
 pub type IdentCollectorData = FxHashMap<String, (FxHashSet<Span>, usize)>;
 type ContainMemberMatch = Rc<Vec<MemberMatchOption>>;
@@ -26,9 +27,10 @@ pub struct IdentCollector {
     pub top_level_mark: Mark,
     pub unresolved_mark: Mark,
     trie: Trie<(usize, IgnoreWord)>,
-    state: MemberMatcherState,
+    state: CollectorMemberMatcherState,
     pending_store_arg_lits: FxHashSet<(Str, Span)>,
     contain_member_match_list: ContainMemberMatch,
+    skip_strings: FxHashSet<String>,
 }
 
 impl IdentCollector {
@@ -41,45 +43,60 @@ impl IdentCollector {
             unresolved_mark,
             used_ident: Default::default(),
             trie: Trie::new(),
-            state: MemberMatcherState::default(),
+            state: CollectorMemberMatcherState::default(),
             skip_lits: Default::default(),
             pending_store_arg_lits: Default::default(),
             contain_member_match_list: Default::default(),
+            skip_strings: FxHashSet::default(),
         }
     }
 
     fn count_str(&mut self, ident: &str, span: Span) {
+        if self.skip_lits.contains(&span) {
+            return;
+        }
+
         let (spans, count) = self
             .field
             .entry(ident.to_string())
             .or_insert_with(|| (FxHashSet::default(), 0));
-
-        if self.skip_lits.contains(&span) {
-            return;
-        }
 
         spans.insert(span);
         *count += 1;
     }
 
     fn count_lit(&mut self, ident: &Str) {
+        if self.skip_strings.contains(ident.value.as_ref()) {
+            return;
+        }
+
         self.count_str(&ident.value, ident.span);
     }
 
-    fn count(&mut self, ident: &IdentName) {
+    fn count_ident(&mut self, ident: &Ident) {
+        self.count_str(&ident.sym, ident.span);
+    }
+
+    fn count_ident_name(&mut self, ident: &IdentName) {
         self.count_str(&ident.sym, ident.span);
     }
 
     pub fn with_context(mut self, context: &TransformContext) -> Self {
         for (index, item) in context.options.ignore_words.iter().enumerate() {
-            self.trie
-                .insert(item.path().to_string(), Some((index, item.clone())));
+            if let Some(path) = item.path() {
+                self.trie
+                    .insert(path.to_string(), Some((index, item.clone())));
+            }
+
+            if let IgnoreWord::StringLit(StringLitOptions { content, .. }) = item {
+                self.skip_strings.insert(content.to_string());
+            }
         }
 
         self
     }
 
-    fn with_state<F: FnOnce(&mut Self)>(&mut self, state: MemberMatcherState, f: F) {
+    fn with_state<F: FnOnce(&mut Self)>(&mut self, state: CollectorMemberMatcherState, f: F) {
         let prev = self.state;
         self.state = state;
         f(self);
@@ -129,7 +146,7 @@ impl IdentCollector {
 
 impl Visit for IdentCollector {
     fn visit_call_expr(&mut self, node: &CallExpr) {
-        if matches!(self.state, MemberMatcherState::Visitor)
+        if matches!(self.state, CollectorMemberMatcherState::Visitor)
             && let Callee::Expr(ref expr) = node.callee
             && matches!(expr, box Expr::Member(_) | box Expr::Ident(_))
         {
@@ -149,7 +166,7 @@ impl Visit for IdentCollector {
     fn visit_member_expr(&mut self, node: &MemberExpr) {
         let mut is_matched = false;
 
-        if matches!(self.state, MemberMatcherState::Visitor) {
+        if matches!(self.state, CollectorMemberMatcherState::Visitor) {
             let mut matcher =
                 MemberMatcher::new(&self.trie, self.contain_member_match_list.clone());
 
@@ -163,21 +180,21 @@ impl Visit for IdentCollector {
         }
 
         if is_matched {
-            self.with_state(MemberMatcherState::Match, |this| {
+            self.with_state(CollectorMemberMatcherState::Match, |this| {
                 node.visit_with(this);
             });
             return;
         }
 
         {
-            let is_match_mode = matches!(self.state, MemberMatcherState::Match);
+            let is_match_mode = matches!(self.state, CollectorMemberMatcherState::Match);
             match &node.obj {
                 box Expr::Member(member) => {
                     member.visit_with(self);
                 }
                 box Expr::Ident(_) => {}
                 _ => {
-                    self.with_state(MemberMatcherState::Visitor, |this| {
+                    self.with_state(CollectorMemberMatcherState::Visitor, |this| {
                         node.obj.visit_with(this);
                     });
                 }
@@ -186,7 +203,7 @@ impl Visit for IdentCollector {
             match &node.prop {
                 MemberProp::Ident(ident_name) => {
                     if !is_match_mode {
-                        self.count(ident_name);
+                        self.count_ident_name(ident_name);
                     }
                 }
                 MemberProp::PrivateName(_) => {}
@@ -195,7 +212,7 @@ impl Visit for IdentCollector {
                         self.count_lit(lit);
                         return;
                     }
-                    self.with_state(MemberMatcherState::Visitor, |this| {
+                    self.with_state(CollectorMemberMatcherState::Visitor, |this| {
                         computed_prop_name.visit_with(this);
                     });
                 }
@@ -204,7 +221,7 @@ impl Visit for IdentCollector {
     }
 
     fn visit_ident(&mut self, ident: &swc_ecma_ast::Ident) {
-        if matches!(self.state, MemberMatcherState::Visitor)
+        if matches!(self.state, CollectorMemberMatcherState::Visitor)
             && !self.pending_store_arg_lits.is_empty()
         {
             let mut matcher: MemberMatcher<'_, IgnoreWordTrieValue> =
@@ -225,6 +242,31 @@ impl Visit for IdentCollector {
             self.count_lit(lit);
         } else {
             lit.visit_children_with(self);
+        }
+    }
+
+    fn visit_prop_name(&mut self, prop_name: &PropName) {
+        match prop_name {
+            PropName::Ident(ident) => {
+                self.count_ident_name(ident);
+            }
+            PropName::Str(str) => {
+                self.count_lit(str);
+            }
+            _ => {
+                prop_name.visit_children_with(self);
+            }
+        }
+    }
+
+    fn visit_prop(&mut self, node: &Prop) {
+        match node {
+            Prop::Shorthand(ident) => {
+                self.count_ident(ident);
+            }
+            _ => {
+                node.visit_children_with(self);
+            }
         }
     }
 }
@@ -341,6 +383,14 @@ enum MemberMatcherState {
     #[default]
     Visitor,
 }
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Copy)]
+enum CollectorMemberMatcherState {
+    Match,
+    #[default]
+    Visitor,
+}
+
 #[derive(Debug)]
 struct MemberMatcher<'a, T: Debug> {
     pub trie: &'a Trie<T>,
@@ -350,6 +400,7 @@ struct MemberMatcher<'a, T: Debug> {
     pub matched: bool,
     matchd_result: Option<(usize, Option<Rc<IgnoreWordTrieValue>>)>,
     skip_spans: FxHashSet<Span>,
+    #[allow(dead_code)]
     contain_member_match_list: ContainMemberMatch,
 }
 
