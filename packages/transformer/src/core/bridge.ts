@@ -2,6 +2,14 @@ import { transform as t } from "../binding";
 import { ModuleType } from "../type";
 
 export interface IgnoreWordObject {
+    /**
+     * expr `require.async("m1")`
+     *
+     * - path: `"require"` => match `"require.async"`
+     * - subpath: `true` => ignore collect `"async"`
+     * - skipLitArg: `false` => ignore collect (`"m1"`)
+     *
+     */
     type: "member";
     /**
      * The path of the word to ignore.
@@ -30,6 +38,11 @@ export interface IgnoreWordObject {
 }
 
 export interface StringLitOption {
+    /**
+     * match string literal
+     *
+     * - `content`: `"use strict"` => ignore collect `"use strict"`
+     **/
     type: "stringLit";
     content: string;
 }
@@ -38,9 +51,19 @@ export type IgnoreWord = string | IgnoreWordObject | StringLitOption;
 
 export interface TransformOption {
     filename?: string;
+    /**
+     * source map file path
+     */
     sourceMap?: string;
+    /**
+     * enable source map, default `false` or webpack sourcemap config
+     * @default false
+     */
     enableSourceMap?: boolean;
     moduleType?: ModuleType;
+    /**
+     * ignore words in the code
+     */
     ignoreWords?: IgnoreWord[];
     preserveKeywords?: string[];
 }

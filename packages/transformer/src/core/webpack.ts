@@ -32,40 +32,20 @@ export class OOMPlugin {
                     additionalAssets: true,
                 },
                 async (assets) => {
-                    const cache = compilation.getCache(PLUGIN_NAME);
-                    const assetsShouldMinify = await Promise.all(
-                        Object.keys(assets).map(async (name) => {
-                            const { source, info } =
-                                compilation.getAsset(name)!;
-
-                            const eTag = cache.getLazyHashedEtag(source);
-                            const cacheSource = cache.getItemCache(name, eTag);
-                            const cacheOutput: Output =
-                                await cacheSource.getPromise();
-
-                            return {
-                                name,
-                                info,
-                                source,
-                                output: cacheOutput,
-                                cacheSource,
-                            };
-                        })
-                    );
+                    const {
+                        enableSourceMap = Boolean(compiler.options.devtool),
+                        ignoreWords,
+                        preserveKeywords,
+                        enableCache = true,
+                    } = this.options;
+                    const cache = enableCache
+                        ? compilation.getCache(PLUGIN_NAME)
+                        : undefined;
 
                     const { SourceMapSource, RawSource } =
                         compiler.webpack.sources;
 
-                    for (const asset of assetsShouldMinify) {
-                        const {
-                            name,
-                            info,
-                            source: inputSource,
-                            cacheSource,
-                        } = asset;
-
-                        let output: Output = asset.output;
-
+                    for (const [name, _asset] of Object.entries(assets)) {
                         const filter = (this.filter ??= createFilter(
                             this.options
                         ));
@@ -73,6 +53,15 @@ export class OOMPlugin {
                         if (!filter(name)) {
                             continue;
                         }
+
+                        const { source: inputSource, info } =
+                            compilation.getAsset(name)!;
+
+                        const eTag = cache?.getLazyHashedEtag(inputSource);
+                        const cacheSource =
+                            eTag && cache?.getItemCache(name, eTag);
+                        let output: Output | undefined =
+                            await cacheSource?.getPromise();
 
                         if (!output) {
                             const { source, map } = inputSource.sourceAndMap();
@@ -93,11 +82,6 @@ export class OOMPlugin {
                                 continue;
                             }
 
-                            const {
-                                enableSourceMap,
-                                ignoreWords,
-                                preserveKeywords,
-                            } = this.options;
                             const options: TransformOption = {
                                 moduleType,
                                 filename: name,
@@ -129,7 +113,7 @@ export class OOMPlugin {
                                 output.source = new RawSource(code);
                             }
 
-                            await cacheSource.storePromise({
+                            await cacheSource?.storePromise({
                                 errors: [],
                                 warning: [],
                                 ...output,

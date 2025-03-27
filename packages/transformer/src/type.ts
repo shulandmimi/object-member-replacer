@@ -12,6 +12,16 @@ export interface OOMPluginOptions
         TransformOption,
         "enableSourceMap" | "ignoreWords" | "preserveKeywords"
     > {
+    /**
+     * exclude files that match the filter
+     */
     exclude?: Filter[];
+    /**
+     * include files that match the filter
+     */
     include?: Filter[];
+    /**
+     * @default true
+     */
+    enableCache?: boolean;
 }

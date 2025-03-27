@@ -134,6 +134,8 @@ pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
         }
     }
 
+    drop(map);
+
     // replace ident
     let mut replacer = IdentReplacer::new(
         field
