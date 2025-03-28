@@ -2,4 +2,4 @@
 "@oomm/transformer": patch
 ---
 
-more option
+bump version for add more option & memory optimizetion
