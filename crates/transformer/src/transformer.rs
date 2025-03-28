@@ -274,19 +274,6 @@ pub struct TransformOption {
     pub(crate) ignore_words: Vec<IgnoreWord>,
 }
 
-// impl Default for TransformOption {
-//     fn default() -> Self {
-//         Self {
-//             filename: None,
-//             source_map: None,
-//             enable_source_map: false,
-//             module_type: None,
-//             preserve_keywords: vec![],
-//             ignore_words: vec![],
-//         }
-//     }
-// }
-
 impl TransformOption {
     fn filename(&self) -> String {
         self.filename.clone().unwrap_or("input.js".to_string())
