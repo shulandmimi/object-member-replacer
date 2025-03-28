@@ -24,7 +24,9 @@ jobs:
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian
             build: |
               corepack disable
+              npm i -g pnpm@9.1.4
               pnpm -v
+              pnpm i
               pnpm --filter "@oomm/transformer" build:rs --target x86_64-unknown-linux-gnu
           - host: ubuntu-latest
             target: x86_64-unknown-linux-musl
