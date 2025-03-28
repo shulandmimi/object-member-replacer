@@ -36,7 +36,8 @@ jobs:
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             build: |
-              corepack prepare pnpm@9.1.4 --activate
+              corepack disable
+              pnpm -v
               pnpm --filter "@oomm/transformer" build:rs --target aarch64-unknown-linux-gnu
           - host: ubuntu-latest
             target: armv7-unknown-linux-gnueabihf
