@@ -1,0 +1,15 @@
+_require.async("./foo.js");
+_require.async("./foo.js");
+_require.async("./foo.js");
+_require.async("./foo.js");
+_require.async("./foo.js");
+_require.async("./foo.js");
+_require.async("./foo.js");
+_require("./bar.js");
+_require("./bar.js");
+_require("./bar.js");
+_require("./bar.js");
+_require("./bar.js");
+_require("./bar.js");
+_require("./bar.js");
+_require("./bar.js");

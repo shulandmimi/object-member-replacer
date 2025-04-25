@@ -20,26 +20,38 @@ function srcFiles(dir) {
  */
 module.exports = {
     entry: "./src/index.js",
-    module: {
-        rules: [],
-    },
-    target: "node",
-    mode: "production",
     plugins: [],
+    cache: false,
+    mode: "production",
     devtool: "source-map",
     optimization: {
         minimizer: [
             new OOMPlugin({
                 ignoreWords: [
                     "process.env.GOGOGO",
-                    { type: 'stringLit', content: "use strict" },
-                    { type: 'member', path: "_require", subpath: false, skipLitArg: true },
+                    { type: "stringLit", content: "use strict" },
+                    {
+                        type: "member",
+                        path: "_require",
+                        subpath: false,
+                        skipLitArg: true,
+                    },
+                    {
+                        type: "member",
+                        path: "console",
+                        subpath: false,
+                        skipLitArg: true,
+                    },
                 ],
-                exclude: [
-                    'exclude'
-                ]
+                exclude: ["exclude"],
             }),
-            // new TerserPlugin(),
+            new TerserPlugin({
+                terserOptions: {
+                    compress: {
+                        drop_console: true,
+                    },
+                },
+            }),
         ],
         splitChunks: {
             cacheGroups: {
