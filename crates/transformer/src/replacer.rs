@@ -1,5 +1,5 @@
 use rustc_hash::{FxHashMap, FxHashSet};
-use swc_common::Span;
+use swc_common::{Span, Spanned};
 use swc_ecma_ast::{
     ComputedPropName, Expr, Ident, KeyValueProp, Lit, MemberExpr, MemberProp, Prop, PropName,
     PropOrSpread,
@@ -11,20 +11,26 @@ use omm_core::TokenAllocator;
 use crate::transformer::TransformContext;
 
 #[derive(Debug)]
+pub struct IdentReplacerConfig {
+    pub skip_lits: FxHashSet<Span>,
+    pub skip_ranges: FxHashSet<Span>,
+}
+
+#[derive(Debug)]
 pub struct IdentReplacer {
     pub should_replace_ident_list: FxHashMap<String, FxHashSet<Span>>,
     pub ident_map: FxHashMap<String, String>,
     pub allocator: TokenAllocator,
-    skip_lits: FxHashSet<Span>,
+    config: IdentReplacerConfig,
 }
 
 impl IdentReplacer {
-    pub fn new(set: FxHashMap<String, FxHashSet<Span>>, skip_lits: FxHashSet<Span>) -> Self {
+    pub fn new(set: FxHashMap<String, FxHashSet<Span>>, config: IdentReplacerConfig) -> Self {
         Self {
             should_replace_ident_list: set,
             allocator: TokenAllocator::new(),
             ident_map: FxHashMap::default(),
-            skip_lits,
+            config,
         }
     }
 
@@ -38,7 +44,7 @@ impl IdentReplacer {
     }
 
     pub fn contain(&self, ident: &str, span: Span) -> bool {
-        if self.skip_lits.contains(&span) {
+        if self.config.skip_lits.contains(&span) {
             return false;
         }
 
@@ -93,6 +99,19 @@ impl IdentReplacer {
 }
 
 impl VisitMut for IdentReplacer {
+    fn visit_mut_call_expr(&mut self, node: &mut swc_ecma_ast::CallExpr) {
+        if let (Some(first), Some(last)) = (node.args.first(), node.args.last()) {
+            if self.config.skip_ranges.contains(&Span {
+                lo: first.span_lo(),
+                hi: last.span_hi(),
+            }) {
+                return;
+            }
+        }
+
+        node.visit_mut_children_with(self);
+    }
+
     fn visit_mut_member_expr(&mut self, node: &mut MemberExpr) {
         match &mut node.obj {
             box Expr::Ident(_) => {}

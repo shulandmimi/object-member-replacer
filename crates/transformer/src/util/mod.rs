@@ -13,6 +13,8 @@ use swc_ecma_transforms::{
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 use swc_error_reporters::handler::try_with_handler;
 
+pub mod script;
+
 struct ResetSyntaxContext;
 
 impl VisitMut for ResetSyntaxContext {

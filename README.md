@@ -7,14 +7,16 @@ Try compressing object fields or string literals, which is suitable for some sce
 When string literals are used with a certain frequency & the cost (source code length) of using the literal after extracting it as a variable reference is less than the cost of using the original literal, extract it as a variable for dynamic reference
 
 ```js
-
 const obj = {};
 obj.namespace.namespace1.namespace2.namespace3 = 10;
 obj.namespace.namespace1.namespace2.namespace3 = 10;
 
 // =>
 
-var a = "namespace", b = "namespace1", c = "namespace2", d = "namespace3";
+var a = "namespace",
+  b = "namespace1",
+  c = "namespace2",
+  d = "namespace3";
 const obj = {};
 obj[a][b][c][d] = 10;
 obj[a][b][c][d] = 10;
@@ -50,23 +52,31 @@ module.exports = {
         ignoreWords: [
           "process.env.GOGOGO",
           // ignore collect
+          // ```unknown
           // function foo() { "use strict" }
           //                   ^^^^^^^^^^
+          // ```
           { type: "stringLit", content: "use strict" },
           // _require.async("./foo")
           {
             type: "member",
             // try match
+            // ```unknown
             // _require.async("./foo")
             // ^^^^^^^^
+            // ```
             path: "_require",
             // ignore collect
+            // ```unknown
             // _require.async("./foo")
             //          ^^^^^
+            // ```
             subpath: false,
             // ingore collect
+            // ```unknown
             //_require.async("./foo")
             //                ^^^^^
+            // ```
             skipLitArg: true,
           },
           // console.log("hello world");
@@ -74,17 +84,25 @@ module.exports = {
           {
             type: "member",
             // match
+            // ```unknown
             //  console.log("hello world");
             //  ^^^^^^^
+            // ```
             path: "console",
             // ignore collect
+            // ```unknown
             //  console.log("hello world");
             //          ^^^
+            // ```
             subpath: false,
-            // ignore collect
-            //  console.log("hello world");
-            //               ^^^^^^^^^^^
-            skipLitArg: false,
+            // Will ignore all expressions, and related data will no longer be collected
+            //
+            // ```unknown
+            // require.async("namespace", "m1")
+            //               ^^^^^^^^^^^^^^^^^
+            // ```
+            // @default false
+            skipLitArg: true,
           },
         ],
         // match after output file
@@ -101,7 +119,7 @@ module.exports = {
     ],
   },
 };
-```
+````
 
 ## roadmap
 

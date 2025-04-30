@@ -23,6 +23,14 @@
   "publishConfig": {
     "access": "public"
   },
+  "repository": {
+    "url": "https://github.com/shulandmimi/object-member-replacer"
+  },
+  "author": {
+    "name": "shulandmimi",
+    "email": "sshuang141@163.com",
+    "url": "https://github.com/shulandmimi"
+  },
   "license": "MIT",
   "ava": {
     "timeout": "3m"
@@ -35,6 +43,7 @@
     "build:rs": "npm run build:rs:debug -- --release",
     "build:rs:debug": "napi build --platform --cargo-cwd ../../ --cargo-name omm_transformer -p omm_transformer --features node binding",
     "build:release": "farm build",
+    "build": "npm run build:rs && npm run build:release",
     "prepublishOnly": "napi prepublish -t npm",
     "test": "ava",
     "universal": "napi universal",

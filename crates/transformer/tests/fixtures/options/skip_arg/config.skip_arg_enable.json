@@ -1,0 +1,10 @@
+{
+  "ignoreWords": [
+    {
+      "type": "member",
+      "path": "console",
+      "subpath": false,
+      "skipArg": true
+    }
+  ]
+}
