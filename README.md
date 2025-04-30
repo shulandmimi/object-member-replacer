@@ -42,7 +42,7 @@ yarn add @oomm/transformer -D
 
 ## usage
 
-````js
+```js
 const { OOMPlugin } = require("@oomm/transformer/webpack");
 
 module.exports = {

@@ -187,7 +187,6 @@ impl IdentCollector {
                                 None
                             }
                         })
-                        .into_iter()
                         .collect(),
                     &matched_option,
                 );
@@ -218,12 +217,9 @@ impl IdentCollector {
         false
     }
 
-    fn process_member_expr(
-        &mut self,
-        node: &MemberExpr,
-    ) -> (bool, Option<(usize, Option<Rc<IgnoreWordTrieValue>>)>) {
+    fn process_member_expr(&mut self, node: &MemberExpr) -> (bool, MatchedResult) {
         let mut is_matched = false;
-        let mut matched_options: Option<(usize, Option<Rc<IgnoreWordTrieValue>>)> = None;
+        let mut matched_options: MatchedResult = None;
 
         if matches!(self.state, CollectorMemberMatcherState::Visitor) {
             let mut matcher: MemberMatcher<'_, (usize, IgnoreWord)> =
@@ -453,7 +449,7 @@ impl From<Vec<String>> for Trie<String> {
 struct MemberMatcherResult {
     is_matched: bool,
     ident_list: Vec<(String, Span)>,
-    match_result: Option<(usize, Option<Rc<IgnoreWordTrieValue>>)>,
+    match_result: MatchedResult,
     skip_spans: FxHashSet<Span>,
 }
 
@@ -478,7 +474,7 @@ struct MemberMatcher<'a, T: Debug> {
     pub state: MemberMatcherState,
     pub ident_list: Vec<(String, Span)>,
     pub matched: bool,
-    matchd_result: Option<(usize, Option<Rc<IgnoreWordTrieValue>>)>,
+    matchd_result: MatchedResult,
     skip_spans: FxHashSet<Span>,
 }
 
@@ -518,10 +514,7 @@ impl<'a, T: Debug> MemberMatcher<'a, T> {
         }
     }
 
-    fn process_match_result(
-        &mut self,
-        match_result: Option<(usize, Option<Rc<IgnoreWordTrieValue>>)>,
-    ) {
+    fn process_match_result(&mut self, match_result: MatchedResult) {
         self.matched = match_result.is_some();
 
         if let Some((pos, options)) = match_result {
