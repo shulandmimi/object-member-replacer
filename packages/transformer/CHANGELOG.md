@@ -1,5 +1,11 @@
 # @oomm/transformer
 
+## 0.0.20
+
+### Patch Changes
+
+- e90a2bc: support ignore callee arguments
+
 ## 0.0.19
 
 ### Patch Changes
