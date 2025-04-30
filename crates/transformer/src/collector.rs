@@ -1,25 +1,31 @@
-use std::{cell::RefCell, fmt::Debug, mem, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use swc_common::{util::take::Take, Mark, Span};
+use swc_common::{util::take::Take, Mark, Span, Spanned};
 use swc_ecma_ast::{
-    CallExpr, Callee, Expr, ExprOrSpread, Ident, IdentName, Lit, MemberExpr, MemberProp, Prop,
-    PropName, Str,
+    CallExpr, Callee, Expr, Ident, IdentName, Lit, MemberExpr, MemberProp, Prop, PropName, Str,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use crate::transformer::{IgnoreWord, MemberMatchOption, StringLitOptions, TransformContext};
+use crate::transformer::{IgnoreWord, StringLitOptions, TransformContext};
 
 pub type IdentCollectorData = FxHashMap<String, (FxHashSet<Span>, usize)>;
-type ContainMemberMatch = Rc<Vec<MemberMatchOption>>;
 type IgnoreWordTrieValue = (usize, IgnoreWord);
+type MatchedResult = Option<(usize, Option<Rc<IgnoreWordTrieValue>>)>;
+
+#[derive(Debug, Default, Clone)]
+struct PendingStoreArg {
+    arg_range: FxHashSet<Span>,
+    arg_lits: FxHashSet<(Str, Span)>,
+}
 
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct IdentCollector {
     pub field: IdentCollectorData,
     pub skip_lits: FxHashSet<Span>,
+    pub skip_ranges: FxHashSet<Span>,
     // TODO: collect more detailed data, such as variable declarations, parameters, functions, etc.
     pub unresolved_ident: FxHashSet<String>,
     pub top_level_ident: FxHashSet<String>,
@@ -28,8 +34,8 @@ pub struct IdentCollector {
     pub unresolved_mark: Mark,
     trie: Trie<(usize, IgnoreWord)>,
     state: CollectorMemberMatcherState,
-    pending_store_arg_lits: FxHashSet<(Str, Span)>,
-    contain_member_match_list: ContainMemberMatch,
+    pending_store_arg: PendingStoreArg,
+    // contain_member_match_list: ContainMemberMatch,
     skip_strings: FxHashSet<String>,
 }
 
@@ -45,9 +51,9 @@ impl IdentCollector {
             trie: Trie::new(),
             state: CollectorMemberMatcherState::default(),
             skip_lits: Default::default(),
-            pending_store_arg_lits: Default::default(),
-            contain_member_match_list: Default::default(),
+            pending_store_arg: Default::default(),
             skip_strings: FxHashSet::default(),
+            skip_ranges: Default::default(),
         }
     }
 
@@ -103,13 +109,36 @@ impl IdentCollector {
         self.state = prev;
     }
 
-    fn process_matcher_result(&mut self, matcher_result: MemberMatcherResult) -> bool {
-        let pending_store_arg_lits = mem::take(&mut self.pending_store_arg_lits);
+    fn process_arg_lits(&mut self, arg_lits: FxHashSet<(Str, Span)>, match_result: &MatchedResult) {
+        #[allow(clippy::collapsible_match)]
+        if let Some((_, options)) = match_result {
+            if let Some((_, options)) = options.as_deref() {
+                if options.skip_lit_arg() {
+                    self.skip_lits.extend(
+                        arg_lits
+                            .into_iter()
+                            .map(|(_, span)| span)
+                            .collect::<Vec<_>>(),
+                    );
 
+                    return;
+                }
+
+                if options.skip_arg() {
+                    return;
+                }
+            }
+        }
+
+        arg_lits.into_iter().for_each(|(lit, _)| {
+            self.count_lit(&lit);
+        });
+    }
+
+    fn process_matcher_result(&mut self, matcher_result: MemberMatcherResult) -> bool {
         let MemberMatcherResult {
             is_matched: matched,
             ident_list,
-            match_result,
             skip_spans,
             ..
         } = matcher_result;
@@ -122,68 +151,103 @@ impl IdentCollector {
             self.skip_lits.extend(skip_spans);
         }
 
-        #[allow(clippy::collapsible_match)]
-        if let Some((_, options)) = match_result {
-            if let Some((_, options)) = options.as_deref() {
-                if options.skip_lit_arg() {
-                    self.skip_lits.extend(
-                        pending_store_arg_lits
-                            .into_iter()
-                            .map(|(_, span)| span)
-                            .collect::<Vec<_>>(),
-                    );
-                } else {
-                    pending_store_arg_lits.into_iter().for_each(|(lit, _)| {
-                        self.count_lit(&lit);
-                    });
+        matched
+    }
+
+    fn process_call_expr(&mut self, node: &CallExpr) -> bool {
+        if matches!(self.state, CollectorMemberMatcherState::Visitor)
+            && let Callee::Expr(box ref expr) = node.callee
+        {
+            let (is_matched, matched_option) = match expr {
+                Expr::Member(member) => self.process_member_expr(member),
+                Expr::Ident(ident) => {
+                    let mut matcher = MemberMatcher::new(&self.trie);
+
+                    ident.visit_with(&mut matcher);
+
+                    let match_result = matcher.take_result();
+
+                    let matched_option = match_result.match_result.clone();
+
+                    let matched = self.process_matcher_result(match_result);
+
+                    (matched, matched_option)
                 }
+                _ => (false, None),
+            };
+
+            if is_matched {
+                self.process_arg_lits(
+                    node.args
+                        .iter()
+                        .filter_map(|arg| {
+                            if let Expr::Lit(Lit::Str(lit)) = &*arg.expr {
+                                Some((lit.clone(), arg.span()))
+                            } else {
+                                None
+                            }
+                        })
+                        .into_iter()
+                        .collect(),
+                    &matched_option,
+                );
+
+                if let Some((_, Some(option))) = matched_option {
+                    // skip
+                    if option.1.skip_arg() {
+                        if let (Some(first), Some(last)) = (node.args.first(), node.args.last()) {
+                            self.pending_store_arg.arg_range.insert(Span {
+                                lo: first.span_lo(),
+                                hi: last.span_hi(),
+                            });
+                        }
+                    }
+                    // collect
+                    else {
+                        node.args.visit_with(self);
+                    }
+                }
+            }
+
+            // already processed
+            if is_matched {
+                return true;
             }
         }
 
-        matched
-    }
-}
-
-impl Visit for IdentCollector {
-    fn visit_call_expr(&mut self, node: &CallExpr) {
-        if matches!(self.state, CollectorMemberMatcherState::Visitor)
-            && let Callee::Expr(ref expr) = node.callee
-            && matches!(expr, box Expr::Member(_) | box Expr::Ident(_))
-        {
-            node.args.iter().for_each(|arg| {
-                #[allow(clippy::collapsible_match)]
-                #[allow(irrefutable_let_patterns)]
-                if let ExprOrSpread { box expr, .. } = arg {
-                    if let Expr::Lit(Lit::Str(ref lit)) = expr {
-                        self.pending_store_arg_lits.insert((lit.clone(), lit.span));
-                    }
-                }
-            });
-        }
-        node.visit_children_with(self);
+        false
     }
 
-    fn visit_member_expr(&mut self, node: &MemberExpr) {
+    fn process_member_expr(
+        &mut self,
+        node: &MemberExpr,
+    ) -> (bool, Option<(usize, Option<Rc<IgnoreWordTrieValue>>)>) {
         let mut is_matched = false;
+        let mut matched_options: Option<(usize, Option<Rc<IgnoreWordTrieValue>>)> = None;
 
         if matches!(self.state, CollectorMemberMatcherState::Visitor) {
-            let mut matcher =
-                MemberMatcher::new(&self.trie, self.contain_member_match_list.clone());
+            let mut matcher: MemberMatcher<'_, (usize, IgnoreWord)> =
+                MemberMatcher::new(&self.trie);
 
             node.visit_with(&mut matcher);
 
-            let matched = self.process_matcher_result(matcher.take_result());
+            let match_result = matcher.take_result();
+
+            matched_options = match_result.match_result.clone();
+
+            let matched = self.process_matcher_result(match_result);
 
             is_matched = matched;
         } else {
-            self.pending_store_arg_lits.clear();
+            self.pending_store_arg.arg_lits.clear();
         }
 
         if is_matched {
             self.with_state(CollectorMemberMatcherState::Match, |this| {
                 node.visit_with(this);
             });
-            return;
+
+            return (is_matched, matched_options);
         }
 
         {
@@ -210,7 +274,7 @@ impl Visit for IdentCollector {
                 MemberProp::Computed(computed_prop_name) => {
                     if !is_match_mode && let Expr::Lit(Lit::Str(lit)) = &*computed_prop_name.expr {
                         self.count_lit(lit);
-                        return;
+                        return (is_matched, matched_options);
                     }
                     self.with_state(CollectorMemberMatcherState::Visitor, |this| {
                         computed_prop_name.visit_with(this);
@@ -218,14 +282,30 @@ impl Visit for IdentCollector {
                 }
             }
         }
+
+        (is_matched, matched_options)
+    }
+}
+
+impl Visit for IdentCollector {
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if self.process_call_expr(node) {
+            return;
+        }
+
+        node.visit_children_with(self);
+    }
+
+    fn visit_member_expr(&mut self, node: &MemberExpr) {
+        self.process_member_expr(node);
     }
 
     fn visit_ident(&mut self, ident: &swc_ecma_ast::Ident) {
         if matches!(self.state, CollectorMemberMatcherState::Visitor)
-            && !self.pending_store_arg_lits.is_empty()
+            && !self.pending_store_arg.arg_lits.is_empty()
         {
             let mut matcher: MemberMatcher<'_, IgnoreWordTrieValue> =
-                MemberMatcher::new(&self.trie, self.contain_member_match_list.clone());
+                MemberMatcher::new(&self.trie);
 
             ident.visit_with(&mut matcher);
 
@@ -400,12 +480,10 @@ struct MemberMatcher<'a, T: Debug> {
     pub matched: bool,
     matchd_result: Option<(usize, Option<Rc<IgnoreWordTrieValue>>)>,
     skip_spans: FxHashSet<Span>,
-    #[allow(dead_code)]
-    contain_member_match_list: ContainMemberMatch,
 }
 
 impl<'a, T: Debug> MemberMatcher<'a, T> {
-    fn new(trie: &'a Trie<T>, contain_member_match_list: ContainMemberMatch) -> Self {
+    fn new(trie: &'a Trie<T>) -> Self {
         Self {
             trie,
             paths: Default::default(),
@@ -414,7 +492,6 @@ impl<'a, T: Debug> MemberMatcher<'a, T> {
             matched: false,
             matchd_result: None,
             skip_spans: FxHashSet::default(),
-            contain_member_match_list,
         }
     }
 
@@ -449,15 +526,6 @@ impl<'a, T: Debug> MemberMatcher<'a, T> {
 
         if let Some((pos, options)) = match_result {
             let mut paths = self.paths.take();
-
-            // let first_index = options.as_deref().map(|(index, _)| *index);
-
-            // if !self.contain_member_match_list.is_empty() {
-            //     let path_arr = paths
-            //         .iter()
-            //         .map(|item| item.0.to_string())
-            //         .collect::<Vec<_>>();
-            // }
 
             if let Some((_, options)) = options.as_deref() {
                 let pos = paths.len().max(1) - 1 - pos;
@@ -558,7 +626,10 @@ mod tests {
 
     use swc_ecma_parser::{EsSyntax, Syntax};
 
-    use crate::{parse, util::resolve_module_mark, MemberMatchOption, ModuleType, TransformOption};
+    use crate::{
+        util::{resolve_module_mark, script::parse},
+        MemberMatchOption, ModuleType, TransformOption,
+    };
 
     use super::*;
 
@@ -682,6 +753,53 @@ a.b.c.d("namespace", "google");
     }
 
     #[test]
+    fn skip_arg() -> Result<()> {
+        let code = r#"
+a.b.c.d("namespace", "google", e("name"), f.g("age"));
+        "#;
+
+        let skip_lit_arg = |args: bool| {
+            create_collector(
+                code,
+                TransformOption {
+                    ignore_words: vec![IgnoreWord::MemberMatch(MemberMatchOption {
+                        path: "a.b.c".into(),
+                        // skip_lit_arg: args,
+                        subpath: true,
+                        skip_arg: args,
+                        ..Default::default()
+                    })],
+                    ..Default::default()
+                },
+            )
+        };
+
+        let collector = skip_lit_arg(true)?;
+
+        // println!("collector: {:#?}", collector.field);
+
+        assert!(!collector.skip_lits.is_empty());
+        assert!(!collector.pending_store_arg.arg_range.is_empty());
+        assert!(collector.field.contains_key("d"));
+        assert!(!collector.field.contains_key("namespace"));
+        assert!(!collector.field.contains_key("google"));
+        assert!(!collector.field.contains_key("name"));
+        assert!(!collector.field.contains_key("g"));
+
+        let collector = skip_lit_arg(false)?;
+
+        assert!(!collector.skip_lits.is_empty());
+        assert!(collector.pending_store_arg.arg_range.is_empty());
+        assert!(collector.field.contains_key("d"));
+        assert!(collector.field.contains_key("namespace"));
+        assert!(collector.field.contains_key("google"));
+        assert!(collector.field.contains_key("name"));
+        assert!(collector.field.contains_key("g"));
+
+        Ok(())
+    }
+
+    #[test]
     fn member_require() -> Result<()> {
         let code = r#"
 require.async("./foo.js");
@@ -742,7 +860,6 @@ require("./foo.js");
         assert!(collector.field.is_empty());
 
         let collector = create_collector_with_skip_lit_arg(false)?;
-
         assert!(collector.skip_lits.is_empty());
         assert!(collector.field.contains_key("./foo.js"));
 

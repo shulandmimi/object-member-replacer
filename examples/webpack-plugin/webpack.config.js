@@ -40,7 +40,7 @@ module.exports = {
                         type: "member",
                         path: "console",
                         subpath: false,
-                        skipLitArg: true,
+                        skipArg: true,
                     },
                 ],
                 exclude: ["exclude"],

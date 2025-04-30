@@ -1,27 +1,25 @@
-use std::{
-    cell::OnceCell,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{cell::OnceCell, path::Path, sync::Arc};
 
-use enhanced_magic_string::collapse_sourcemap::CollapseSourcemapOptions;
 use itertools::Itertools;
 use omm_core::filter_cannot_compress_ident;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use swc_common::{BytePos, FileName, Globals, LineCol, SourceMap};
+use swc_common::Globals;
 use swc_ecma_ast::{
     BindingIdent, Decl, Expr, Lit, Module, ModuleItem, Pat, Stmt, VarDecl, VarDeclKind,
     VarDeclarator,
 };
-use swc_ecma_codegen::{
-    text_writer::{JsWriter, WriteJs},
-    Config, Emitter,
-};
-use swc_ecma_parser::{EsSyntax, Parser, StringInput, Syntax, TsSyntax};
+use swc_ecma_parser::{EsSyntax, Syntax, TsSyntax};
 use swc_ecma_visit::{VisitMutWith, VisitWith};
 
-use crate::util::{build_source_map, resolve_module_mark, try_with};
+use crate::{
+    replacer::IdentReplacerConfig,
+    util::{
+        resolve_module_mark,
+        script::{codegen, create_source_map, parse, try_build_output_sourcemap},
+        try_with,
+    },
+};
 
 use super::{collector::IdentCollector, replacer::IdentReplacer};
 
@@ -112,6 +110,7 @@ pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
         mut field,
         used_ident,
         skip_lits,
+        skip_ranges,
         ..
     } = collector;
 
@@ -142,7 +141,10 @@ pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
             .into_iter()
             .map(|(k, (spans, _))| (k, spans))
             .collect(),
-        skip_lits,
+        IdentReplacerConfig {
+            skip_lits,
+            skip_ranges,
+        },
     )
     .with_context(context);
 
@@ -153,49 +155,54 @@ pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
     hosting_variable(module, replacer);
 }
 
-pub fn parse(content: Arc<String>, syntax: Syntax) -> Result<Module> {
-    let content = StringInput::new(&content, Default::default(), Default::default());
-
-    let mut parser = Parser::new(syntax, content, None);
-
-    parser.parse_module().map_err(|err| {
-        let msg = err.kind().msg();
-        panic!("Parser Error: {}", msg);
-    })
-}
-
-pub fn codegen(
-    module: &mut Module,
-    cm: Arc<SourceMap>,
-    src_map: Option<&mut Vec<(BytePos, LineCol)>>,
-) -> Result<Vec<u8>> {
-    let config = Config::default().with_omit_last_semi(true);
-    let mut buf = vec![];
-    // let src = Vec::new();
-    let writer = Box::new(JsWriter::new(cm.clone(), "\n", &mut buf, src_map)) as Box<dyn WriteJs>;
-
-    let mut emitter = Emitter {
-        cfg: config,
-        cm,
-        comments: None,
-        wr: writer,
-    };
-
-    emitter.emit_module(module)?;
-
-    drop(emitter);
-
-    Ok(buf)
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", default = "Default::default")]
 pub struct MemberMatchOption {
+    ///
+    /// The path of the word to ignore.
+    ///
+    ///
+    ///
+    /// try match
+    /// ```unknown
+    ///
+    /// // path: "_require"
+    /// _require.async("./foo")
+    /// ^^^^^^^^
+    ///
+    /// // path: "foo.bar.foo1.bar1"
+    /// foo.bar.foo1.bar1("./foo")
+    /// ^^^ ^^^ ^^^^ ^^^^
+    /// ```
     pub path: String,
+    ///
+    /// ignore the subpath of the word. eg. `async`
+    ///
+    /// ```unknown
+    /// _require.async("./foo")
+    ///          ^^^^^
+    /// ```
+    ///
+    /// default: `true`
     pub subpath: bool,
-    /// if match path, args lit will be ignore
+    ///
+    /// ignore the literal argument of the word. eg. `"./foo"`
+    ///
+    /// ```unknown
+    /// _require.async("./foo")
+    ///                 ^^^^^
+    /// ```
+    ///
+    /// default: `false`
     pub skip_lit_arg: bool,
-    pub contain: bool,
+    ///
+    /// ```unknown
+    /// `require.async("namespace", "m1", foo("nest_arg"))`
+    ///                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    /// ```
+    ///
+    /// default: `false`
+    pub skip_arg: bool,
 }
 
 impl Default for MemberMatchOption {
@@ -204,7 +211,7 @@ impl Default for MemberMatchOption {
             path: "".to_string(),
             subpath: true,
             skip_lit_arg: false,
-            contain: false,
+            skip_arg: false,
         }
     }
 }
@@ -238,16 +245,21 @@ impl IgnoreWord {
     pub fn subpath(&self) -> bool {
         match self {
             IgnoreWord::MemberMatch(options) => options.subpath,
-            IgnoreWord::Simple(_) => MemberMatchOption::default().subpath,
-            IgnoreWord::StringLit(_) => false,
+            _ => MemberMatchOption::default().subpath,
         }
     }
 
     pub fn skip_lit_arg(&self) -> bool {
         match self {
-            IgnoreWord::MemberMatch(options) => options.skip_lit_arg,
-            IgnoreWord::Simple(_) => MemberMatchOption::default().skip_lit_arg,
-            IgnoreWord::StringLit(_) => false,
+            IgnoreWord::MemberMatch(options) => !self.skip_arg() && options.skip_lit_arg,
+            _ => MemberMatchOption::default().skip_lit_arg,
+        }
+    }
+
+    pub fn skip_arg(&self) -> bool {
+        match self {
+            IgnoreWord::MemberMatch(options) => options.skip_arg,
+            _ => MemberMatchOption::default().skip_arg,
         }
     }
 }
@@ -258,7 +270,7 @@ impl<T: AsRef<str>> From<T> for IgnoreWord {
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TransformOption {
     pub filename: Option<String>,
@@ -267,11 +279,11 @@ pub struct TransformOption {
     pub enable_source_map: bool,
     pub module_type: Option<ModuleType>,
     #[serde(default)]
-    pub(crate) preserve_keywords: Vec<String>,
+    pub preserve_keywords: Vec<String>,
 
     // TODO: support ignore object and object ident
     #[serde(default)]
-    pub(crate) ignore_words: Vec<IgnoreWord>,
+    pub ignore_words: Vec<IgnoreWord>,
 }
 
 impl TransformOption {
@@ -296,44 +308,6 @@ pub struct TransformContext {
 
 #[allow(clippy::declare_interior_mutable_const)]
 const SWC_GLOBALS: OnceCell<Arc<Globals>> = OnceCell::new();
-
-fn create_source_map(path: PathBuf, content: Arc<String>) -> SourceMap {
-    let source_map = SourceMap::default();
-    source_map.new_source_file_from(FileName::Real(path).into(), content);
-    source_map
-}
-
-fn try_build_output_sourcemap(
-    source_map: Arc<SourceMap>,
-    input_src: Option<String>,
-    src_map: Option<Vec<(BytePos, LineCol)>>,
-) -> Result<Option<String>> {
-    let Some(src) = src_map else {
-        return Ok(None);
-    };
-
-    // after transform sourcemap
-    let source_map = build_source_map(source_map.clone(), &src);
-    let mut buf = vec![];
-    source_map.to_writer(&mut buf)?;
-    let source_map = String::from_utf8_lossy(&buf).to_string();
-
-    // collapse input sourcemap and transform sourcemap
-    let mut sourcemap_chains = vec![];
-    let append_source_map = |s: String| sourcemap::SourceMap::from_slice(s.as_bytes());
-    if let Some(input_src) = input_src {
-        sourcemap_chains.push(append_source_map(input_src)?);
-    }
-    sourcemap_chains.push(append_source_map(source_map)?);
-    let collapse_sourcemap = enhanced_magic_string::collapse_sourcemap::collapse_sourcemap_chain(
-        sourcemap_chains,
-        CollapseSourcemapOptions::default(),
-    );
-
-    let mut src_map = vec![];
-    collapse_sourcemap.to_writer(&mut src_map)?;
-    Ok(Some(String::from_utf8_lossy(&src_map).to_string()))
-}
 
 pub fn transform(content: String, options: TransformOption) -> Result<TransformResult> {
     let context = TransformContext {

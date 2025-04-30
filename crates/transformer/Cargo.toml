@@ -21,7 +21,12 @@ swc_ecma_utils = "8.0.0"
 sourcemap = "9.1.2"
 enhanced-magic-string = "0.1.0"
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3", default-features = false, features = ["alloc", "env-filter", "json", "tracing"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "alloc",
+    "env-filter",
+    "json",
+    "tracing",
+] }
 
 napi = { version = "2.12.2", default-features = false, features = [
     "napi4",
@@ -29,6 +34,7 @@ napi = { version = "2.12.2", default-features = false, features = [
     "anyhow",
 ], optional = true }
 napi-derive = { version = "2.12.2", optional = true }
+glob = "0.3.2"
 
 
 [build-dependencies]
@@ -38,7 +44,7 @@ napi-build = { version = "2.0.1", optional = true }
 default = []
 node = ["dep:napi", "dep:napi-derive", "dep:napi-build"]
 
-[lib]
+[lib.release]
 crate-type = ["cdylib"]
 
 [profile.release]

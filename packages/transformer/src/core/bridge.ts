@@ -14,27 +14,54 @@ export interface IgnoreWordObject {
     /**
      * The path of the word to ignore.
      *
-     * link `require.async()` => `"require"`
+     *
+     *
+     * try match
+     * ```unknown
+     *
+     * // path: "_require"
+     * _require.async("./foo")
+     * ^^^^^^^^
+     *
+     * // path: "foo.bar.foo1.bar1"
+     * foo.bar.foo1.bar1("./foo")
+     * ^^^ ^^^ ^^^^ ^^^^
+     * ```
      */
     path: string;
     /**
      *
-     * `require.async`
-     *
      * ignore the subpath of the word. eg. `async`
+     *
+     * ```unknown
+     * _require.async("./foo")
+     *          ^^^^^
+     * ```
      *
      * @default true
      */
-    subpath: boolean;
+    subpath?: boolean;
     /**
      *
-     * `require.async("namespace")`
+     * ignore the literal argument of the word. eg. `"./foo"`
      *
-     * ignore the literal argument of the word. eg. `"namespace"`
-     *
+     * ```unknown
+     * _require.async("./foo")
+     *                 ^^^^^
+     * ```
      * @default false
      */
-    skipLitArg: boolean;
+    skipLitArg?: boolean;
+
+    /**
+     *
+     * ```unknown
+     * `require.async("namespace", "m1")`
+     *                ^^^^^^^^^^^^^^^^^
+     * ```
+     * @default false
+     */
+    skipArg?: boolean;
 }
 
 export interface StringLitOption {

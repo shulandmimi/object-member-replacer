@@ -1,30 +1,6 @@
 # @oomm/transformer
 
-## features
-
-- support minify object member (Computed(`["field"]`), Ident(`.field`)) and string literal(`"field"`)
-
-```ts
-let obj = {};
-
-obj.foo_bar_field_1 = "1";
-
-console.log(obj.foo_bar_field_1);
-
-const v = obj.foo_bar_field_1;
-
-// ===>
-
-var a = "foo_bar_field_1";
-
-console.log(obj.foo_bar_field_1);
-// =>
-console.log(obj[a]);
-
-const v = obj.foo_bar_field_1;
-// =>
-const v = obj[a];
-```
+[documents](https://github.com/shulandmimi/object-member-replacer)
 
 ## usage
 
