@@ -1,5 +1,11 @@
 # @oomm/transformer
 
+## 0.0.21
+
+### Patch Changes
+
+- 19c4a4b: fix call expr arg double collect & fix used_ident collect
+
 ## 0.0.20
 
 ### Patch Changes
