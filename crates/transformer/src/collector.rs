@@ -109,6 +109,10 @@ impl IdentCollector {
         self.state = prev;
     }
 
+    fn collect_used_ident(&mut self, ident: &Ident) {
+        self.used_ident.insert(ident.sym.to_string());
+    }
+
     fn process_arg_lits(&mut self, arg_lits: FxHashSet<(Str, Span)>, match_result: &MatchedResult) {
         #[allow(clippy::collapsible_match)]
         if let Some((_, options)) = match_result {
@@ -155,6 +159,7 @@ impl IdentCollector {
     }
 
     fn process_call_expr(&mut self, node: &CallExpr) -> bool {
+        let mut skip_arg = false;
         if matches!(self.state, CollectorMemberMatcherState::Visitor)
             && let Callee::Expr(box ref expr) = node.callee
         {
@@ -173,7 +178,7 @@ impl IdentCollector {
 
                     (matched, matched_option)
                 }
-                _ => (false, None),
+                _ => return false,
             };
 
             if is_matched {
@@ -194,6 +199,7 @@ impl IdentCollector {
                 if let Some((_, Some(option))) = matched_option {
                     // skip
                     if option.1.skip_arg() {
+                        skip_arg = true;
                         if let (Some(first), Some(last)) = (node.args.first(), node.args.last()) {
                             self.pending_store_arg.arg_range.insert(Span {
                                 lo: first.span_lo(),
@@ -201,20 +207,15 @@ impl IdentCollector {
                             });
                         }
                     }
-                    // collect
-                    else {
-                        node.args.visit_with(self);
-                    }
                 }
-            }
-
-            // already processed
-            if is_matched {
-                return true;
             }
         }
 
-        false
+        if !skip_arg {
+            node.args.visit_with(self);
+        }
+
+        true
     }
 
     fn process_member_expr(&mut self, node: &MemberExpr) -> (bool, MatchedResult) {
@@ -252,7 +253,9 @@ impl IdentCollector {
                 box Expr::Member(member) => {
                     member.visit_with(self);
                 }
-                box Expr::Ident(_) => {}
+                box Expr::Ident(ident) => {
+                    self.collect_used_ident(&ident);
+                }
                 _ => {
                     self.with_state(CollectorMemberMatcherState::Visitor, |this| {
                         node.obj.visit_with(this);
@@ -297,20 +300,18 @@ impl Visit for IdentCollector {
     }
 
     fn visit_ident(&mut self, ident: &swc_ecma_ast::Ident) {
-        if matches!(self.state, CollectorMemberMatcherState::Visitor)
-            && !self.pending_store_arg.arg_lits.is_empty()
-        {
+        self.collect_used_ident(ident);
+
+        if matches!(self.state, CollectorMemberMatcherState::Visitor) {
             let mut matcher: MemberMatcher<'_, IgnoreWordTrieValue> =
                 MemberMatcher::new(&self.trie);
 
             ident.visit_with(&mut matcher);
 
-            if self.process_matcher_result(matcher.take_result()) {
+            if !self.process_matcher_result(matcher.take_result()) {
                 return;
             };
         }
-
-        self.used_ident.insert(ident.sym.to_string());
     }
 
     fn visit_lit(&mut self, lit: &Lit) {
@@ -446,6 +447,7 @@ impl From<Vec<String>> for Trie<String> {
     }
 }
 
+#[derive(Debug)]
 struct MemberMatcherResult {
     is_matched: bool,
     ident_list: Vec<(String, Span)>,
@@ -855,6 +857,34 @@ require("./foo.js");
         let collector = create_collector_with_skip_lit_arg(false)?;
         assert!(collector.skip_lits.is_empty());
         assert!(collector.field.contains_key("./foo.js"));
+
+        Ok(())
+    }
+
+    #[test]
+
+    fn used_ident() -> Result<()> {
+        let code = r#"
+const a = 1;
+const b = 2;
+const c = 3;
+c.d.e.f;
+d.e.f.g;
+console.log(e);
+"#;
+
+        let v = create_collector(
+            code,
+            TransformOption {
+                ..Default::default()
+            },
+        )?;
+
+        let mut used_ident = v.used_ident.into_iter().collect::<Vec<_>>();
+        used_ident.sort();
+
+        assert_eq!(used_ident.len(), 6);
+        assert_eq!(used_ident, vec!["a", "b", "c", "console", "d", "e"]);
 
         Ok(())
     }

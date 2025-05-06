@@ -151,3 +151,8 @@ fn fixtures_factor(pattern: &str) -> Result<()> {
 fn options() -> Result<()> {
     fixtures_factor("tests/fixtures/options/**/*.js")
 }
+
+#[test]
+fn examples() -> Result<()> {
+    fixtures_factor("tests/fixtures/examples/**/*.js")
+}
