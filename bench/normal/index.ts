@@ -1,9 +1,11 @@
 import { writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import path, { join } from "node:path";
 
 interface GenerateContextOptions {
     topLevelFieldCount: number;
     nestedLevel: number;
+    /** 多级访问 */
+    nestedFiledCount?: number;
     nestedLevelFieldCount?: number;
     generateFactory?: ((context: GenerateContext) => string)[];
 }
@@ -13,15 +15,16 @@ const outDir = join(process.cwd(), "output");
 class GenerateContext {
     decls: string[] = [];
     topLevelFields: Set<string> = new Set();
-    totalIdents: Set<string> = new Set();
-    levelIdents: Record<number, Set<string>> = {};
-    levelObjectLitIdents: Record<number, Set<string>> = {};
+    totalIdentList: Set<string> = new Set();
+    levelIdentList: Record<number, Set<string>> = {};
+    levelObjectLitIdentList: Record<number, Set<string>> = {};
     shouldVisitLevelObject: Set<number> = new Set();
+    levelNestedFieldRecord: Record<number, string[]> = {};
 
     constructor(public options: GenerateContextOptions) {
         this.generateNestedDecls();
         this.generateToplevelFields();
-        this.generateNestedIdents();
+        this.generateNestedIdentList();
     }
 
     generateNestedDecls() {
@@ -31,13 +34,13 @@ class GenerateContext {
         const decls: string[] = [];
 
         for (let i = 0; i < times; i++) {
-            let ident = allocateIdent({ excludeSets: [this.totalIdents] });
+            let ident = allocateIdent({ excludeSets: [this.totalIdentList] });
 
             obj.add(ident);
 
             decls.push(ident);
 
-            this.totalIdents.add(ident);
+            this.totalIdentList.add(ident);
         }
     }
 
@@ -45,43 +48,67 @@ class GenerateContext {
         this.topLevelFields.clear();
 
         for (let i = 0; i < this.options.topLevelFieldCount; i++) {
-            const ident = allocateIdent({ excludeSets: [this.totalIdents] });
+            const ident = allocateIdent({ excludeSets: [this.totalIdentList] });
             this.topLevelFields.add(ident);
-            this.totalIdents.add(ident);
+            this.totalIdentList.add(ident);
         }
 
         this.topLevelFields.forEach((item) => {
-            this.totalIdents.add(item);
+            this.totalIdentList.add(item);
         });
     }
 
-    generateNestedIdents() {
-        this.totalIdents.add("i");
+    generateNestedIdentList() {
+        this.totalIdentList.add("i");
+        this.totalIdentList.add("_nest");
 
         for (let i = 0; i < this.options.nestedLevel; i++) {
-            const levelIdentsSet = (this.levelIdents[i] ??= new Set());
-            const levelObjectLitIdentSet = (this.levelObjectLitIdents[i] ??=
+            const levelIdentSet = (this.levelIdentList[i] ??= new Set());
+            const levelObjectLitIdentSet = (this.levelObjectLitIdentList[i] ??=
                 new Set());
+            const levelNestedFieldArr = (this.levelNestedFieldRecord[i] ??= []);
 
+            let visitIdent = false;
             for (
                 let j = 0;
                 j < (this.options.nestedLevelFieldCount ?? 5);
                 j++
             ) {
                 const newIdent = allocateIdent({
-                    excludeSets: [this.totalIdents],
+                    excludeSets: [this.totalIdentList],
                 });
 
-                this.totalIdents.add(newIdent);
+                this.totalIdentList.add(newIdent);
 
-                levelIdentsSet.add(newIdent);
+                levelIdentSet.add(newIdent);
 
-                if (Math.random() > 0.5) {
+                if (
+                    (Math.random() > 0.5 || this.options.nestedLevel === 1) &&
+                    !visitIdent
+                ) {
+                    visitIdent = true;
                     levelObjectLitIdentSet.add(newIdent);
+                    levelNestedFieldArr.push(newIdent);
+                    for (
+                        let o = 0;
+                        o < (this.options.nestedFiledCount ?? 5);
+                        o++
+                    ) {
+                        const nestedIdent = allocateIdent({
+                            excludeSets: [this.totalIdentList],
+                        });
+
+                        this.totalIdentList.add(nestedIdent);
+
+                        levelNestedFieldArr.push(nestedIdent);
+                    }
                 }
             }
 
-            if (Math.random() > 0.5) {
+            if (
+                levelObjectLitIdentSet.size &&
+                (Math.random() > 0.5 || this.options.nestedLevel === 1)
+            ) {
                 this.shouldVisitLevelObject.add(i);
             }
         }
@@ -171,8 +198,10 @@ ${this.generateNestedCode(0) ?? ""}
             return this.generateBenchCode();
         }
 
-        const levelObjectLitIdentSet = context.levelObjectLitIdents[curLevel];
-        const nestedIdents = Array.from(context.levelIdents[curLevel])
+        const levelObjectLitIdentSet =
+            context.levelObjectLitIdentList[curLevel];
+        const [ident, ...fields] = context.levelNestedFieldRecord[curLevel];
+        const nestedIdentList = Array.from(context.levelIdentList[curLevel])
             .map(
                 (ident) =>
                     `${ident} = ${
@@ -185,7 +214,8 @@ ${this.generateNestedCode(0) ?? ""}
 
         return `
         function nested${curLevel}() {
-            var ${nestedIdents};
+            var ${nestedIdentList};
+            ${fields.map((item) => `${ident}['${item}'] = ${ident}`)}
 
             ${this.generateNestedCode(curLevel + 1) ?? ""}
         }
@@ -204,22 +234,72 @@ ${this.generateNestedCode(0) ?? ""}
 const loopTimes = 10000000;
 const TopLevelFieldCount = 50;
 const runTimes = 20;
-function generateBenchCode(context: GenerateContext, isDynamic = true) {
+
+interface GenerateBenchCodeOptions {
+    isDynamic?: boolean;
+    isHybrid?: boolean;
+    isNestedVisit?: boolean;
+}
+function generateBenchCode(
+    context: GenerateContext,
+    options: GenerateBenchCodeOptions = {}
+) {
+    const {
+        isDynamic = true,
+        isHybrid = false,
+        isNestedVisit = false,
+    } = options;
     const arr = [...context.shouldVisitLevelObject];
     const objectLitIdentList = arr.flatMap((item) => [
-        ...context.levelObjectLitIdents[item],
+        ...context.levelObjectLitIdentList[item],
     ]);
     const topLevelFields = [...context.topLevelFields];
+
+    function generateCode(variable: string, field: string) {
+        if (isHybrid) {
+            const isDynamic = Math.random() > 0.5;
+            if (isDynamic) {
+                return `${variable}[${field}]`;
+            }
+
+            return `${variable}.${field}`;
+        }
+        return isDynamic ? `${variable}[${field}]` : `${variable}.${field}`;
+    }
+
+    function generateNormalVisit() {
+        return objectLitIdentList
+            .flatMap((variable) =>
+                topLevelFields.map(
+                    (field) => `_assert(${generateCode(variable, field)})`
+                )
+            )
+            .join(";");
+    }
+
+    function generateNestedVisit() {
+        return arr
+            .map((item) => context.levelNestedFieldRecord[item])
+            .map((item) => {
+                const [ident, ...fields] = item;
+                return Array.from({ length: fields.length }, (_, index) => [
+                    ...fields.slice(index),
+                    ...fields.slice(0, index),
+                ])
+                    .map((item) => {
+                        if (!isDynamic)
+                            return `_assert(${ident}.${item.join(".")});`;
+                        return `_assert(${ident}["${item.join('"]["')}"]);`;
+                    })
+                    .join(";");
+            })
+            .join(";");
+    }
+
     return `
 const start = performance.now();
 for (let i = 0; i < ${loopTimes}; i++) {
-${objectLitIdentList
-    .flatMap((variable) =>
-        topLevelFields.map((field) =>
-            `_assert(${isDynamic ? `${variable}[${field}]` : `${variable}.${field}`})`
-        )
-    )
-    .join(";")}
+${isNestedVisit ? generateNestedVisit() : generateNormalVisit()}
 }
 console.log(performance.now() - start);
     `;
@@ -230,12 +310,13 @@ const files = ["member_dynamic_field", "member_static_field"];
 const context = new GenerateContext({
     nestedLevel: 1,
     topLevelFieldCount: TopLevelFieldCount,
+    nestedFiledCount: 10,
 });
 
 type IGenerator = {
     name: string;
     generateFactor: GenerateCodeOptions["generateBenchCode"];
-    benchmarkFormater: (output: string) => {
+    benchmarkFormatter: (output: string) => {
         staticTotalTime?: number;
         dynamicTotalTime?: number;
         diff?: number;
@@ -385,14 +466,14 @@ const generator1: IGenerator[] = [
                 name: files[1],
                 handler: (context) => {
                     return `
-                    {${generateBenchCode(context, false)}};
+                    {${generateBenchCode(context, { isDynamic: false })}};
                     \n
                     {${generateBenchCode(context)}};
                     `;
                 },
             },
         ],
-        benchmarkFormater: (output: string) => {
+        benchmarkFormatter: (output: string) => {
             const [_static, _dynamic] = output
                 .trim()
                 .split(/[\s\n]/)
@@ -414,12 +495,12 @@ const generator1: IGenerator[] = [
                     return `
                 {${generateBenchCode(context)}};
                 \n
-                {${generateBenchCode(context, false)}};
+                {${generateBenchCode(context, { isDynamic: true })}};
                 `;
                 },
             },
         ],
-        benchmarkFormater(output) {
+        benchmarkFormatter(output) {
             const [_dynamic, _static] = output
                 .trim()
                 .split(/[\s\n]/)
@@ -445,7 +526,7 @@ const generator2: IGenerator[] = [
                 },
             },
         ],
-        benchmarkFormater(output) {
+        benchmarkFormatter(output) {
             const [_dynamic] = output.split(/\s\n/).map(Number);
 
             return {
@@ -459,11 +540,76 @@ const generator2: IGenerator[] = [
             {
                 name: files[1],
                 handler: (context) => {
-                    return generateBenchCode(context, false);
+                    return generateBenchCode(context, { isDynamic: false });
                 },
             },
         ],
-        benchmarkFormater(output) {
+        benchmarkFormatter(output) {
+            const [_static] = output.split(/\s\n/).map(Number);
+
+            return {
+                staticTotalTime: _static,
+            };
+        },
+    },
+    {
+        name: "hybrid",
+        generateFactor: [
+            {
+                name: files[1],
+                handler: (context) => {
+                    return generateBenchCode(context, {
+                        isDynamic: false,
+                        isHybrid: true,
+                    });
+                },
+            },
+        ],
+        benchmarkFormatter(output) {
+            const [_static] = output.split(/\s\n/).map(Number);
+
+            return {
+                staticTotalTime: _static,
+            };
+        },
+    },
+    {
+        name: "dynamic-nested-visit",
+        generateFactor: [
+            {
+                name: files[1],
+                handler: (context) => {
+                    return generateBenchCode(context, {
+                        isDynamic: true,
+                        isHybrid: false,
+                        isNestedVisit: true,
+                    });
+                },
+            },
+        ],
+        benchmarkFormatter(output) {
+            const [_static] = output.split(/\s\n/).map(Number);
+
+            return {
+                dynamicTotalTime: _static,
+            };
+        },
+    },
+    {
+        name: "static-nested-visit",
+        generateFactor: [
+            {
+                name: files[1],
+                handler: (context) => {
+                    return generateBenchCode(context, {
+                        isDynamic: false,
+                        isHybrid: false,
+                        isNestedVisit: true,
+                    });
+                },
+            },
+        ],
+        benchmarkFormatter(output) {
             const [_static] = output.split(/\s\n/).map(Number);
 
             return {
@@ -473,11 +619,14 @@ const generator2: IGenerator[] = [
     },
 ];
 
-const avgNum = context.shouldVisitLevelObject.size * context.options.topLevelFieldCount;
+const avgNum =
+    context.shouldVisitLevelObject.size *
+    context.options.topLevelFieldCount *
+    loopTimes;
 
 // const benchmarkDatas: { staticTime: number; dynamicTime: number } = [];
 
-const combineRunDatas = generator1
+const combineRunDataList = generator1
     .map((item) => {
         const generator = new GenerateCode(context, {
             generateBenchCode: item.generateFactor,
@@ -490,7 +639,7 @@ const combineRunDatas = generator1
         };
     })
     .map((item) => {
-        const datas = {
+        const perfData = {
             staticTotalTime: 0,
             dynamicTotalTime: 0,
             diff: 0,
@@ -499,57 +648,111 @@ const combineRunDatas = generator1
         for (let i = 0; i < runTimes; i++) {
             console.log(`${item.name} Loop ${i + 1}...`);
             const output = runSync("node", item.outputFile);
-            const data = item.generator.benchmarkFormater(output);
-            datas.staticTotalTime += data.staticTotalTime ?? 0;
-            datas.dynamicTotalTime += data.dynamicTotalTime ?? 0;
+            const data = item.generator.benchmarkFormatter(output);
+            perfData.staticTotalTime += data.staticTotalTime ?? 0;
+            perfData.dynamicTotalTime += data.dynamicTotalTime ?? 0;
         }
 
-        // datas.staticTotalTime /= avgNum
-        // datas.dynamicTotalTime /= avgNum;
-        datas.diff = datas.dynamicTotalTime / datas.staticTotalTime;
+        perfData.diff = perfData.dynamicTotalTime / perfData.staticTotalTime;
 
         table.push([
             "node",
             item.name,
-            datas.staticTotalTime.toFixed(2),
-            datas.dynamicTotalTime.toFixed(2),
-            datas.diff.toFixed(10),
+            perfData.staticTotalTime.toFixed(2),
+            perfData.dynamicTotalTime.toFixed(2),
+            perfData.diff.toFixed(10),
         ]);
-        return datas;
+        return perfData;
     });
-const [_dynamic, _static] = generator2.map((item, index) => {
-    const generator = new GenerateCode(context, {
-        generateBenchCode: item.generateFactor,
-    });
-    const outputFiles = generator.generate(item.name);
+const [_dynamic, _static, _hybrid, dynamicNestedVisit, staticNestedVisit] =
+    generator2.map((item, index) => {
+        const generator = new GenerateCode(context, {
+            generateBenchCode: item.generateFactor,
+        });
+        const outputFiles = generator.generate(item.name);
 
-    const datas = {
-        staticTotalTime: 0,
-        dynamicTotalTime: 0,
+        const perfData = {
+            staticTotalTime: 0,
+            dynamicTotalTime: 0,
+        };
+
+        for (let i = 0; i < runTimes; i++) {
+            console.log(`${item.name} Loop ${i + 1}...`);
+            const output = runSync("node", outputFiles);
+            const data = item.benchmarkFormatter(output);
+            perfData.staticTotalTime += data.staticTotalTime || 0;
+            perfData.dynamicTotalTime += data.dynamicTotalTime || 0;
+        }
+        return perfData;
+    });
+
+interface PerfData {
+    staticTotalTime: number;
+    dynamicTotalTime: number;
+    diff?: number;
+}
+
+function mergeData(d1: PerfData, d2: PerfData): PerfData {
+    const d: PerfData = {
+        staticTotalTime: d1.staticTotalTime || d2.staticTotalTime,
+        dynamicTotalTime: d2.dynamicTotalTime || d1.dynamicTotalTime,
     };
+    d.diff = d.dynamicTotalTime / d.staticTotalTime;
+    return d;
+}
 
-    for (let i = 0; i < runTimes; i++) {
-        console.log(`${item.name} Loop ${i + 1}...`);
-        const output = runSync("node", outputFiles);
-        const data = item.benchmarkFormater(output);
-        datas.staticTotalTime += data.staticTotalTime || 0;
-        datas.dynamicTotalTime += data.dynamicTotalTime || 0;
-    }
-    return datas;
-});
+const combinePerfData = mergeData(_static, _dynamic);
+const nestedVisit = mergeData(staticNestedVisit, dynamicNestedVisit);
 
-const combineDatas = {
-    staticTotalTime: _static.staticTotalTime,
-    dynamicTotalTime: _dynamic.dynamicTotalTime,
-    diff: _dynamic.dynamicTotalTime / _static.staticTotalTime,
-};
+const logHeader = `
+read times: ${avgNum}
+loop times: ${loopTimes}
+nest level: ${context.options.nestedLevel}
+top level field count: ${context.options.topLevelFieldCount}
+visit nested count: ${context.shouldVisitLevelObject.size}
+level size: ${Object.entries(context.levelObjectLitIdentList).reduce(
+    (r, [level, set]) => r + set.size,
+    0
+)}
+`;
+console.log(logHeader);
+table.push([
+    "node",
+    "normal",
+    combinePerfData.staticTotalTime.toFixed(2),
+    combinePerfData.dynamicTotalTime.toFixed(2),
+    combinePerfData.diff?.toFixed(10) ?? 0,
+]);
+table.push([
+    "node",
+    "hybrid",
+    _hybrid.staticTotalTime.toFixed(2),
+    _hybrid.dynamicTotalTime.toFixed(2),
+    0,
+]);
 
 table.push([
     "node",
-    'normal',
-    combineDatas.staticTotalTime.toFixed(2),
-    combineDatas.dynamicTotalTime.toFixed(2),
-    combineDatas.diff.toFixed(10),
+    "nested-visit",
+    nestedVisit.staticTotalTime.toFixed(2),
+    nestedVisit.dynamicTotalTime.toFixed(2),
+    0,
 ]);
 
-console.log(table.toString())
+console.log(table.toString());
+
+writeFileSync(path.join(outDir, "result.md"), `
+
+# result
+
+## metadata
+
+${logHeader}
+
+## result
+
+\`\`\`json
+${JSON.stringify(table, null, 4)}
+\`\`\`
+
+`);
