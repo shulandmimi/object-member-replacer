@@ -14,7 +14,8 @@
   "license": "ISC",
   "dependencies": {
     "@farmfe/cli": "^1.0.4",
-    "@farmfe/core": "^1.6.4"
+    "@farmfe/core": "^1.6.4",
+    "cli-table3": "^0.6.5"
   },
   "devDependencies": {
     "@types/node": "^22.10.5"
