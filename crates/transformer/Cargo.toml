@@ -44,8 +44,8 @@ napi-build = { version = "2.0.1", optional = true }
 default = []
 node = ["dep:napi", "dep:napi-derive", "dep:napi-build"]
 
-[lib.'cfg(not(tests))']
-# [lib]
+# [lib.'cfg(not(tests))']
+[lib]
 crate-type = ["cdylib"]
 
 [profile.release]
