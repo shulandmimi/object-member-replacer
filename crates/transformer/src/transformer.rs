@@ -4,7 +4,7 @@ use itertools::Itertools;
 use omm_core::filter_cannot_compress_ident;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use swc_common::Globals;
+use swc_common::{FileName, Globals};
 use swc_ecma_ast::{
     BindingIdent, Decl, Expr, Lit, Module, ModuleItem, Pat, Stmt, VarDecl, VarDeclKind,
     VarDeclarator,
@@ -16,7 +16,7 @@ use crate::{
     replacer::IdentReplacerConfig,
     util::{
         resolve_module_mark,
-        script::{codegen, create_source_map, parse, try_build_output_sourcemap},
+        script::{codegen, parse, try_build_output_sourcemap},
         try_with,
     },
 };
@@ -321,13 +321,12 @@ pub fn transform(content: String, options: TransformOption) -> Result<TransformR
     let content = Arc::new(content);
     let syntax = syntax_from_option(&context.module_type);
 
-    // parse
-    let mut module = parse(content.clone(), syntax)?;
+    let source_file_name = Arc::new(FileName::Real(Path::new(&filename).to_path_buf()));
+    let source_map = Arc::new(swc_common::SourceMap::default());
+    let source_file = source_map.new_source_file_from(source_file_name, content.clone());
 
-    let source_map = Arc::new(create_source_map(
-        Path::new(&filename).to_path_buf(),
-        content,
-    ));
+    // parse
+    let mut module = parse(&source_file, syntax)?;
 
     // optimize
     try_with(source_map.clone(), &context.globals.clone(), || {

@@ -617,7 +617,7 @@ mod tests {
 
     use anyhow::Result;
     use std::sync::Arc;
-    use swc_common::Globals;
+    use swc_common::{Globals, SourceMap};
 
     use swc_ecma_parser::{EsSyntax, Syntax};
 
@@ -629,7 +629,10 @@ mod tests {
     use super::*;
 
     fn create_collector(code: &str, options: TransformOption) -> Result<IdentCollector> {
-        let mut v = parse(Arc::new(code.to_string()), Syntax::Es(EsSyntax::default()))?;
+        let cm = Arc::new(SourceMap::default());
+        let source_file_name = Arc::new(swc_common::FileName::Custom("test.js".to_string()));
+        let source_file = cm.new_source_file(source_file_name, code.to_string());
+        let mut v = parse(&source_file, Syntax::Es(EsSyntax::default()))?;
 
         let globals = Globals::default();
 
