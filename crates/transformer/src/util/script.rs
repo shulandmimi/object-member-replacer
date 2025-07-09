@@ -1,16 +1,16 @@
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::Result;
-use enhanced_magic_string::collapse_sourcemap::CollapseSourcemapOptions;
-use swc_common::{BytePos, FileName, LineCol, SourceMap};
+use swc_common::{
+    input::SourceFileInput, source_map::SourceMapGenConfig, BytePos, FileName, LineCol, SourceFile,
+    SourceMap,
+};
 use swc_ecma_ast::Module;
 use swc_ecma_codegen::{
     text_writer::{JsWriter, WriteJs},
     Config, Emitter,
 };
-use swc_ecma_parser::{Parser, StringInput, Syntax};
-
-use crate::util::build_source_map;
+use swc_ecma_parser::{lexer::Lexer, Parser, Syntax};
 
 pub fn codegen(
     module: &mut Module,
@@ -35,10 +35,11 @@ pub fn codegen(
     Ok(buf)
 }
 
-pub fn parse(content: Arc<String>, syntax: Syntax) -> Result<Module> {
-    let content = StringInput::new(&content, Default::default(), Default::default());
+pub fn parse(source_file: &SourceFile, syntax: Syntax) -> Result<Module> {
+    let source_file_input = SourceFileInput::from(source_file);
+    let lexer = Lexer::new(syntax, Default::default(), source_file_input, None);
 
-    let mut parser = Parser::new(syntax, content, None);
+    let mut parser = Parser::new_from(lexer);
 
     parser.parse_module().map_err(|err| {
         let msg = err.kind().msg();
@@ -46,10 +47,15 @@ pub fn parse(content: Arc<String>, syntax: Syntax) -> Result<Module> {
     })
 }
 
-pub fn create_source_map(path: PathBuf, content: Arc<String>) -> SourceMap {
-    let source_map = SourceMap::default();
-    source_map.new_source_file_from(FileName::Real(path).into(), content);
-    source_map
+struct SourceMapConfig {}
+
+impl SourceMapGenConfig for SourceMapConfig {
+    fn file_name_to_source(&self, f: &FileName) -> String {
+        f.to_string()
+    }
+    fn inline_sources_content(&self, _f: &FileName) -> bool {
+        true
+    }
 }
 
 pub fn try_build_output_sourcemap(
@@ -61,25 +67,15 @@ pub fn try_build_output_sourcemap(
         return Ok(None);
     };
 
-    // after transform sourcemap
-    let source_map = build_source_map(source_map.clone(), &src);
-    let mut buf = vec![];
-    source_map.to_writer(&mut buf)?;
-    let source_map = String::from_utf8_lossy(&buf).to_string();
+    // SourceMap::from(value)
+    let input_src = input_src
+        .map(|s| sourcemap::SourceMap::from_slice(s.as_bytes()).ok())
+        .flatten();
 
-    // collapse input sourcemap and transform sourcemap
-    let mut sourcemap_chains = vec![];
-    let append_source_map = |s: String| sourcemap::SourceMap::from_slice(s.as_bytes());
-    if let Some(input_src) = input_src {
-        sourcemap_chains.push(append_source_map(input_src)?);
-    }
-    sourcemap_chains.push(append_source_map(source_map)?);
-    let collapse_sourcemap = enhanced_magic_string::collapse_sourcemap::collapse_sourcemap_chain(
-        sourcemap_chains,
-        CollapseSourcemapOptions::default(),
-    );
+    let source_map =
+        source_map.build_source_map_with_config(&src, input_src.as_ref(), SourceMapConfig {});
 
     let mut src_map = vec![];
-    collapse_sourcemap.to_writer(&mut src_map)?;
+    source_map.to_writer(&mut src_map)?;
     Ok(Some(String::from_utf8_lossy(&src_map).to_string()))
 }
