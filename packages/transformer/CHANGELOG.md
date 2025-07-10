@@ -1,5 +1,11 @@
 # @oomm/transformer
 
+## 0.0.22
+
+### Patch Changes
+
+- f48e1b8: fix sourcemap
+
 ## 0.0.21
 
 ### Patch Changes
