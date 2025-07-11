@@ -93,6 +93,23 @@ export interface TransformOption {
      */
     ignoreWords?: IgnoreWord[];
     preserveKeywords?: string[];
+
+    optimize?: {
+        compression?: {
+            type: "gzip";
+            /**
+             * gzip compress level, default 2
+             * @default 2
+             */
+            compress?: number;
+
+            /**
+             * filter level for gzip optimization, default 2
+             * @default 2
+             */
+            filterLevel?: number;
+        };
+    };
 }
 
 export interface TransformResult {

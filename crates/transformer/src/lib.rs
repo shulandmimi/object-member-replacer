@@ -3,6 +3,8 @@
 #![feature(let_chains)]
 
 mod collector;
+mod filter;
+mod optimize;
 mod replacer;
 mod transformer;
 mod util;

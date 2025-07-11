@@ -10,7 +10,7 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use crate::transformer::{IgnoreWord, StringLitOptions, TransformContext};
 
-pub type IdentCollectorData = FxHashMap<String, (FxHashSet<Span>, usize)>;
+pub type IdentCollectorData = FxHashMap<String, FxHashSet<Span>>;
 type IgnoreWordTrieValue = (usize, IgnoreWord);
 type MatchedResult = Option<(usize, Option<Rc<IgnoreWordTrieValue>>)>;
 
@@ -62,13 +62,12 @@ impl IdentCollector {
             return;
         }
 
-        let (spans, count) = self
+        let spans = self
             .field
             .entry(ident.to_string())
-            .or_insert_with(|| (FxHashSet::default(), 0));
+            .or_insert_with(|| (FxHashSet::default()));
 
         spans.insert(span);
-        *count += 1;
     }
 
     fn count_lit(&mut self, ident: &Str) {

@@ -44,14 +44,20 @@ module.exports = {
                     },
                 ],
                 exclude: ["exclude"],
-            }),
-            new TerserPlugin({
-                terserOptions: {
-                    compress: {
-                        drop_console: true,
-                    },
+                optimize: {
+                    // compression: {
+                    //     type: "gzip",
+                    //     filterLevel: .1,
+                    // }
                 },
             }),
+            // new TerserPlugin({
+            //     terserOptions: {
+            //         compress: {
+            //             drop_console: true,
+            //         },
+            //     },
+            // }),
         ],
         splitChunks: {
             cacheGroups: {

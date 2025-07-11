@@ -21,6 +21,7 @@ swc_ecma_utils = "8.0.0"
 sourcemap = "9.1.2"
 enhanced-magic-string = "0.1.0"
 tracing = "0.1.41"
+flate2 = "1.1.2"
 tracing-subscriber = { version = "0.3", default-features = false, features = [
     "alloc",
     "env-filter",

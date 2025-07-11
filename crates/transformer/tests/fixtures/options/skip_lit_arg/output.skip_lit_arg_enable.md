@@ -15,7 +15,8 @@
       "skipLitArg": true,
       "skipArg": false
     }
-  ]
+  ],
+  "optimize": null
 }
 ```
 

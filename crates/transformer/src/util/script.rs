@@ -12,6 +12,8 @@ use swc_ecma_codegen::{
 };
 use swc_ecma_parser::{lexer::Lexer, Parser, Syntax};
 
+use crate::transformer::TransformContext;
+
 pub fn codegen(
     module: &mut Module,
     cm: Arc<SourceMap>,
@@ -60,7 +62,7 @@ impl SourceMapGenConfig for SourceMapConfig {
 
 pub fn try_build_output_sourcemap(
     source_map: Arc<SourceMap>,
-    input_src: Option<String>,
+    input_src: Arc<TransformContext>,
     src_map: Option<Vec<(BytePos, LineCol)>>,
 ) -> Result<Option<String>> {
     let Some(src) = src_map else {
@@ -69,6 +71,9 @@ pub fn try_build_output_sourcemap(
 
     // SourceMap::from(value)
     let input_src = input_src
+        .options
+        .source_map
+        .as_ref()
         .map(|s| sourcemap::SourceMap::from_slice(s.as_bytes()).ok())
         .flatten();
 

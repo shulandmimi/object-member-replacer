@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use swc_common::{
-    errors::HANDLER, BytePos, Globals, LineCol, Mark, SourceMap, SyntaxContext, GLOBALS,
-};
-use swc_common::{source_map::SourceMapGenConfig, FileName};
+use swc_common::{errors::HANDLER, Globals, Mark, SourceMap, SyntaxContext, GLOBALS};
 use swc_ecma_ast::Module;
 use swc_ecma_transforms::{
     helpers::{Helpers, HELPERS},
@@ -55,19 +52,4 @@ where
             Ok(())
         })
     })
-}
-
-struct SourceMapConfig;
-
-impl SourceMapGenConfig for SourceMapConfig {
-    fn file_name_to_source(&self, f: &FileName) -> String {
-        f.to_string()
-    }
-}
-
-pub fn build_source_map(
-    cm: Arc<SourceMap>,
-    mappings: &[(BytePos, LineCol)],
-) -> sourcemap::SourceMap {
-    cm.build_source_map_with_config(mappings, None, SourceMapConfig)
 }

@@ -37,7 +37,9 @@ export class OOMPlugin {
                         ignoreWords,
                         preserveKeywords,
                         enableCache = true,
+                        optimize,
                     } = this.options;
+
                     const cache = enableCache
                         ? compilation.getCache(PLUGIN_NAME)
                         : undefined;
@@ -89,6 +91,7 @@ export class OOMPlugin {
                                 enableSourceMap,
                                 ignoreWords,
                                 preserveKeywords,
+                                optimize,
                             };
 
                             const result = await transform(inputCode, options);

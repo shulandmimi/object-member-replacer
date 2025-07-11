@@ -10,7 +10,7 @@ export type Filter = string | RegExp | ((filename: string) => boolean);
 export interface OOMPluginOptions
     extends Pick<
         TransformOption,
-        "enableSourceMap" | "ignoreWords" | "preserveKeywords"
+        "enableSourceMap" | "ignoreWords" | "preserveKeywords" | "optimize"
     > {
     /**
      * exclude files that match the filter

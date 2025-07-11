@@ -13,6 +13,8 @@ use swc_ecma_parser::{EsSyntax, Syntax, TsSyntax};
 use swc_ecma_visit::{VisitMutWith, VisitWith};
 
 use crate::{
+    filter::{IdentFilterPlugin, IdentFilterPluginAdapter, IdentItem},
+    optimize::gzip::GzipFilter,
     replacer::IdentReplacerConfig,
     util::{
         resolve_module_mark,
@@ -94,7 +96,11 @@ pub fn hosting_variable(module: &mut Module, replacer: IdentReplacer) {
     );
 }
 
-pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
+pub fn object_member_minify(
+    module: &mut Module,
+    context: &TransformContext,
+    plugin: &IdentFilterPluginAdapter,
+) {
     let (unresolved_mark, top_level_mark) = resolve_module_mark(
         module,
         matches!(context.module_type, ModuleType::Typescript),
@@ -114,9 +120,18 @@ pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
         ..
     } = collector;
 
+    field.iter_mut().for_each(|(key, spans)| {
+        spans.retain(|span| {
+            !plugin.filter_ident(&&IdentItem {
+                ident: key,
+                range: (span.lo.0 as isize, span.hi.0 as isize),
+            })
+        });
+    });
+
     let filterable_map = field
         .iter()
-        .map(|(ident, (_, count))| (ident.clone(), *count))
+        .map(|(ident, set)| (ident.clone(), set.len()))
         .collect::<FxHashMap<_, _>>();
 
     // filter does not have to be replaced
@@ -137,10 +152,7 @@ pub fn object_member_minify(module: &mut Module, context: &TransformContext) {
 
     // replace ident
     let mut replacer = IdentReplacer::new(
-        field
-            .into_iter()
-            .map(|(k, (spans, _))| (k, spans))
-            .collect(),
+        field.into_iter().map(|(k, spans)| (k, spans)).collect(),
         IdentReplacerConfig {
             skip_lits,
             skip_ranges,
@@ -270,6 +282,41 @@ impl<T: AsRef<str>> From<T> for IgnoreWord {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GzipOption {
+    pub compress: Option<usize>,
+    pub filter_level: Option<f64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum CompressionOption {
+    #[serde(rename = "gzip")]
+    Gzip(GzipOption),
+}
+
+impl Default for CompressionOption {
+    fn default() -> Self {
+        CompressionOption::Gzip(GzipOption::default())
+    }
+}
+
+impl Default for GzipOption {
+    fn default() -> Self {
+        Self {
+            compress: Default::default(),
+            filter_level: Some(2.0),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Optimize {
+    pub compression: Option<CompressionOption>,
+}
+
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TransformOption {
@@ -278,12 +325,16 @@ pub struct TransformOption {
     #[serde(default)]
     pub enable_source_map: bool,
     pub module_type: Option<ModuleType>,
+
     #[serde(default)]
     pub preserve_keywords: Vec<String>,
 
     // TODO: support ignore object and object ident
     #[serde(default)]
     pub ignore_words: Vec<IgnoreWord>,
+
+    #[serde(default)]
+    pub optimize: Option<Optimize>,
 }
 
 impl TransformOption {
@@ -309,17 +360,32 @@ pub struct TransformContext {
 #[allow(clippy::declare_interior_mutable_const)]
 const SWC_GLOBALS: OnceCell<Arc<Globals>> = OnceCell::new();
 
+fn create_plugin_adapter(
+    content: Arc<String>,
+    context: &Arc<TransformContext>,
+) -> IdentFilterPluginAdapter {
+    let mut plugin_adapter = IdentFilterPluginAdapter::new(vec![]);
+
+    if let Some(gzip_filter) = GzipFilter::new(content.clone(), context.clone()) {
+        plugin_adapter = plugin_adapter.with_plugin(Box::new(gzip_filter) as _);
+    }
+
+    plugin_adapter
+}
+
 pub fn transform(content: String, options: TransformOption) -> Result<TransformResult> {
-    let context = TransformContext {
+    let context = Arc::new(TransformContext {
         module_type: module_type_from_option(&options),
         options,
         #[allow(clippy::borrow_interior_mutable_const)]
         globals: SWC_GLOBALS.get_or_init(|| Arc::new(Globals::new())).clone(),
-    };
+    });
     let filename = context.options.filename();
 
     let content = Arc::new(content);
     let syntax = syntax_from_option(&context.module_type);
+
+    let filter_plugin_adapter = create_plugin_adapter(content.clone(), &context);
 
     let source_file_name = Arc::new(FileName::Real(Path::new(&filename).to_path_buf()));
     let source_map = Arc::new(swc_common::SourceMap::default());
@@ -330,7 +396,7 @@ pub fn transform(content: String, options: TransformOption) -> Result<TransformR
 
     // optimize
     try_with(source_map.clone(), &context.globals.clone(), || {
-        object_member_minify(&mut module, &context);
+        object_member_minify(&mut module, &context, &filter_plugin_adapter);
     })?;
 
     let mut src = if context.options.source_map.is_some() || context.options.enable_source_map {
@@ -343,7 +409,7 @@ pub fn transform(content: String, options: TransformOption) -> Result<TransformR
     let code = codegen(&mut module, source_map.clone(), src.as_mut())?;
 
     let content = String::from_utf8_lossy(&code).to_string();
-    let map = try_build_output_sourcemap(source_map, context.options.source_map, src)?;
+    let map = try_build_output_sourcemap(source_map, context, src)?;
 
     Ok(TransformResult { content, map })
 }
@@ -355,27 +421,23 @@ mod tests {
 
     #[test]
     fn test() -> Result<()> {
-        let input = r#"
-    const obj = {};
-
-    obj.fooooooooooooooooooooooooooooooooooooooo = 1;
-
-    obj["fooooooooooooooooooooooooooooooooooooooo"] = 1;
-
-    console.log(obj.fooooooooooooooooooooooooooooooooooooooo);
-    console.log(obj.fooooooooooooooooooooooooooooooooooooooo);
-    console.log(obj.fooooooooooooooooooooooooooooooooooooooo);
-    console.log(obj.fooooooooooooooooooooooooooooooooooooooo);
-    console.log(obj.fooooooooooooooooooooooooooooooooooooooo);
-    console.log(obj.fooooooooooooooooooooooooooooooooooooooo);
-    console.log(obj.fooooooooooooooooooooooooooooooooooooooo);
-    console.log(obj.fooooooooooooooooooooooooooooooooooooooo);
-    console.log(obj.fooooooooooooooooooooooooooooooooooooooo);
-    console.log(obj.fooooooooooooooooooooooooooooooooooooooo);
-    console.log(obj.fooooooooooooooooooooooooooooooooooooooo);
-    console.log(obj.fooooooooooooooooooooooooooooooooooooooo);
-    console.log(obj.fooooooooooooooooooooooooooooooooooooooo);
-    "#;
+        let input = r#"const obj = {}
+obj.fooooooooooooooooooooooooooooooooooooooo = 1
+obj["fooooooooooooooooooooooooooooooooooooooo"] = 1
+console.log(obj.fooooooooooooooooooooooooooooooooooooooo)
+console.log(obj.fooooooooooooooooooooooooooooooooooooooo)
+console.log(obj.fooooooooooooooooooooooooooooooooooooooo)
+console.log(obj.fooooooooooooooooooooooooooooooooooooooo)
+console.log(obj.fooooooooooooooooooooooooooooooooooooooo)
+console.log(obj.fooooooooooooooooooooooooooooooooooooooo)
+console.log(obj.fooooooooooooooooooooooooooooooooooooooo)
+console.log(obj.fooooooooooooooooooooooooooooooooooooooo)
+console.log(obj.fooooooooooooooooooooooooooooooooooooooo)
+console.log(obj.fooooooooooooooooooooooooooooooooooooooo)
+console.log(obj.fooooooooooooooooooooooooooooooooooooooo)
+console.log(obj.fooooooooooooooooooooooooooooooooooooooo)
+console.log(obj.fooooooooooooooooooooooooooooooooooooooo)
+"#;
 
         let result = transform(input.to_string(), Default::default())?;
 

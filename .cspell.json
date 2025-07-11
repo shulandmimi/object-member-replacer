@@ -1,9 +1,9 @@
 {
     "globRoot": "./",
     "cache": {
-      "cacheLocation": "./node_modules/.cspell",
-      "cacheStrategy": "content",
-      "useCache": true
+        "cacheLocation": "./node_modules/.cspell",
+        "cacheStrategy": "content",
+        "useCache": true
     },
     "ignoreWords": [
         "rposition"
@@ -20,6 +20,7 @@
         "eabi",
         "elif",
         "farmfe",
+        "flate",
         "fooooooooooooooooooooooooooooooooooooooo",
         "gnueabihf",
         "Itertools",

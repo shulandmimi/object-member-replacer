@@ -7,7 +7,8 @@
   "enableSourceMap": false,
   "moduleType": null,
   "preserveKeywords": [],
-  "ignoreWords": []
+  "ignoreWords": [],
+  "optimize": null
 }
 ```
 
