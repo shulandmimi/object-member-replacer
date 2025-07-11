@@ -6,6 +6,7 @@ mod collector;
 mod replacer;
 mod transformer;
 mod util;
+mod optimize;
 
 #[cfg(not(feature = "node"))]
 pub use transformer::*;
